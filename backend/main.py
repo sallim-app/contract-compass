@@ -15,6 +15,12 @@ app = FastAPI(
     title="계약나침반 — 공공계약 방법 결정 도우미",
     description="국가계약법·지방계약법 기반 계약방법 결정 지원 서비스",
     version="1.0.0",
+    # 2026-08-04 보안 감사: /docs·/openapi.json이 contract.naru.build에 공개돼
+    # 있었다(실측 200). 무인증 LLM 서비스의 전 라우트·스키마 지도이고 관리자
+    # 라우트 이름까지 노출된다. SPA는 고정 경로만 부르므로 동작 영향 없다.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 settings = get_settings()
