@@ -62,6 +62,10 @@ claude mcp add --transport http contract-compass https://contract.sallim.app/mcp
 ChatGPT: Settings → Connectors → Developer mode에서 위 URL을 커넥터로 추가.
 
 도구 명세·아키텍처·한도 정책 상세는 [docs/MCP.md](docs/MCP.md) 참조.
+
+금액구간별 계약방법·수의계약 사유·용어 가이드 페이지(`/g/`)의 생성·검증·배포 절차는
+[docs/PROGRAMMATIC_SEO.md](docs/PROGRAMMATIC_SEO.md) 참조 — 룰셋에서 파생 생성하므로
+페이지를 수기 편집하지 말 것.
 로컬 stdio 실행: `python3 mcp/server.py` (등록: `codex mcp add contract-compass -- python3 /path/to/mcp/server.py`)
 
 ## 구성
@@ -72,9 +76,9 @@ frontend/   React + TypeScript (Vite) — 위저드 UI
 mcp/        MCP 서버 — stdio(로컬) / Streamable HTTP(:8403, 원격) · 무LLM 도구 6종
 edge/       Cloudflare Worker (contract-edge) — 장애 폴백 게이트 · law API 엣지 캐시
 rules/      계약 룰셋 JSON (contract_rules·law_registry 등) ← 결정론 핵심
-tools/      법령·예규·별표 수집/인덱싱 파이프라인 (law.go.kr Open API)
+tools/      법령·예규·별표 수집/인덱싱 파이프라인 (law.go.kr Open API) · 가이드 페이지 생성기
 etl/        PDF/DOCX → 청크 → ChromaDB 파이프라인
-docs/       MCP 명세 · 장애 전환 런북
+docs/       MCP 명세 · 장애 전환 런북 · 가이드 페이지 파이프라인
 scripts/    스탠바이 동기화 · 반출 전 기밀 검사
 tests/      단위·회귀 테스트 + Ask 질문뱅크
 ```

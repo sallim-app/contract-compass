@@ -24,7 +24,13 @@ jobs:
       - name: 룰 회귀셋 (LLM·chroma 불필요)
         run: |
           python -m pytest tests/unit/test_public_scenarios.py tests/unit/test_determinism.py \
-            tests/unit/test_law_registry_integrity.py tests/unit/test_legal_basis_resolution.py -q
+            tests/unit/test_law_registry_integrity.py tests/unit/test_legal_basis_resolution.py \
+            tests/unit/test_seo_pages.py -q
+
+      # 생성 SEO 페이지는 대외 주장이다 — 금액 경계·요율 진실원·금지 표현 게이트를
+      # 푸시마다 돌린다. --strict는 게이트 위반 시 rc=1.
+      - name: SEO 페이지 생성 게이트
+        run: python tools/build_seo_pages.py --check --strict
       - name: 룰 스키마 감사
         run: python tools/audit_rule_schema.py
 
