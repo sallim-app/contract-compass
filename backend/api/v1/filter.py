@@ -46,22 +46,10 @@ def _cache_set(key: str, val: dict) -> None:
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 
-def _rule_method(rule: dict, price: int = 0) -> str:
-    """규칙 result에서 금액에 맞는 계약방법 문자열 추출. method_by_amount 지원."""
-    result = rule.get("result", {})
-    if "method" in result:
-        return result["method"]
-    method_map = result.get("method_by_amount", {})
-    if method_map:
-        tiers = sorted(
-            ((int(k.split("_", 1)[1]), v) for k, v in method_map.items()),
-            reverse=True,
-        )
-        for threshold, method in tiers:
-            if price >= threshold:
-                return method
-        return tiers[-1][1] if tiers else "미확정"
-    return "미확정"
+# 진실원은 rule_engine — 룰만 필요한 경량 소비자(정적 페이지 생성기·CI 테스트)가
+# 이 무거운 모듈을 import하지 않고 같은 함수를 쓰게 하려고 옮겼다(2026-08-06).
+# 호출부는 그대로 `_rule_method`를 쓴다.
+from backend.services.rule_engine import rule_method as _rule_method  # noqa: E402
 
 
 def _load_prompt(name: str) -> str:

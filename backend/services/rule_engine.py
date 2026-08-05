@@ -4,6 +4,32 @@ from pathlib import Path
 from typing import Any
 
 
+def rule_method(rule: dict, price: int = 0) -> str:
+    """규칙 result에서 금액에 맞는 계약방법 문자열 추출. method_by_amount 지원.
+
+    여기 있는 이유(2026-08-06): 원래 `backend/api/v1/filter.py`의 `_rule_method`였는데,
+    그 모듈을 import하면 chromadb·numpy까지 끌려온다(2,333 모듈). 룰 결과에서 값을
+    끌어내는 순수 함수를 무거운 API 모듈에 두면 **룰만 필요한 소비자**(정적 페이지
+    생성기, 경량 CI 테스트)가 그 값을 재구현하게 되고, 그 사본이 다음 개정에서
+    본선과 갈린다 — `pass_score_ref` 단일화(8151f15)와 같은 이유로 사본을 만들지
+    않는다. filter.py는 이 함수를 alias로 그대로 쓴다(호출부 무변경).
+    """
+    result = rule.get("result", {})
+    if "method" in result:
+        return result["method"]
+    method_map = result.get("method_by_amount", {})
+    if method_map:
+        tiers = sorted(
+            ((int(k.split("_", 1)[1]), v) for k, v in method_map.items()),
+            reverse=True,
+        )
+        for threshold, method in tiers:
+            if price >= threshold:
+                return method
+        return tiers[-1][1] if tiers else "미확정"
+    return "미확정"
+
+
 class RuleEngine:
     def __init__(self, rules_path: str):
         self._path = Path(rules_path)
