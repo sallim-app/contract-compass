@@ -26,7 +26,8 @@ from mcp import types as mcp_types
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from auth import PRICING_URL, DailyQuota, resolve_access  # noqa: E402 — mcp/ 로컬 모듈
+from auth import (PRICING_URL, DailyQuota, access_fields,  # noqa: E402 — mcp/ 로컬 모듈
+                  resolve_access, unattributed_access)
 
 BASE_URL = os.environ.get("CONTRACT_COMPASS_URL", "http://127.0.0.1:8402").rstrip("/")
 API = f"{BASE_URL}/api/v1"
@@ -55,17 +56,44 @@ def _denied_result(payload: dict) -> mcp_types.CallToolResult:
     )
 
 
+# stdio 전송으로 떠 있는가. **stdio 기동에서만 켠다 — 기본값은 False(fail-closed)다.**
+# **왜 이 방향인가(2026-08-07, T-2026W32-105)**: 요청 컨텍스트 조회 실패를 `None`으로
+# 삼키면 그 호출이 'stdio 로컬'로 판정돼 **무제한 티어 + 내부 분류**가 된다. HTTP로
+# 떠 있는 상태에서 컨텍스트를 못 얻는 것은 로컬 호출이 아니라 **계측·게이트 고장**이고,
+# 둘을 구별하지 못하면 외부 호출 전량이 조용히 내부로 분류돼 분모에서 사라진다
+# (필드는 멀쩡해 집계기도 못 잡는다).
+# 플래그를 `_HTTP_MODE`가 아니라 `_STDIO_MODE`로 둔 이유: ASGI import·gunicorn factory처럼
+# `__main__`을 안 거치는 기동에서 HTTP 플래그는 False로 남아 **결함이 그대로 되살아난다**
+# (codex 교차검증 지적). 모르는 상태의 기본값은 '로컬 무제한'이 아니라 '귀속 실패'여야 한다.
+_STDIO_MODE = False
+
+
+def _current_request(ctx) -> tuple[Any, str | None]:
+    """(요청, 실패사유). stdio 기동에서만 요청 부재가 정상이므로 (None, None)."""
+    try:
+        req = ctx.request
+    except Exception as e:  # noqa: BLE001 — 전송 구현이 던질 수 있다
+        return None, type(e).__name__
+    if req is None and not _STDIO_MODE:
+        return None, "no_request_context"
+    return req, None
+
+
 class QuotaGate:
     """tools/call 단위 티어 게이트 + JSONL 호출 로그 (ServerMiddleware, 2026-07-30).
 
     stdio(ctx.request=None)는 local 티어로 무제한 — 야간 QA·codexw 하네스 보호.
-    원격(streamable-http)은 무료 IP당 FREE_DAILY, cc_live_* 키는 키당 한도."""
+    원격(streamable-http)은 무료 IP당 FREE_DAILY, cc_live_* 키는 키당 한도.
+    **HTTP 모드에서 요청 컨텍스트가 없으면 그것은 stdio가 아니라 고장이다** —
+    tier=unknown으로 적고 free와 같게 잠근다(unattributed_access)."""
 
     async def __call__(self, ctx, call_next):
         if ctx.method != "tools/call":
             return await call_next(ctx)
         tool = (ctx.params or {}).get("name", "?")
-        access = resolve_access(ctx.request)
+        req, attribution_error = _current_request(ctx)
+        access = unattributed_access(attribution_error) if attribution_error \
+            else resolve_access(req)
         if access.error:
             return _denied_result(access.error)
         if access.daily_limit is not None and not _quota.consume(access.subject, access.daily_limit):
@@ -82,7 +110,9 @@ class QuotaGate:
             sc = getattr(result, "structured_content", None)
             entry = {
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "tool": tool,
-                "tier": access.tier, "subject": access.subject,
+                # 귀속 필드는 auth.access_fields가 단일 진실원 — 여기서 손으로 담으면
+                # 하나가 빠져도 집계기는 0으로 읽을 뿐 아무도 못 본다(원문 IP·UA 미포함).
+                **access_fields(access),
                 "args": _json.dumps(args, ensure_ascii=False)[:300],
                 "error": (sc or {}).get("error") if isinstance(sc, dict) else None,
                 "dur_ms": round((time.time() - t0) * 1000),
@@ -720,4 +750,6 @@ if __name__ == "__main__":
                    port=int(os.environ.get("MCP_PORT", "8403")),
                    stateless_http=True)
     else:
+        # 여기서만 "요청 컨텍스트 부재는 정상"이 된다(_current_request 참조).
+        _STDIO_MODE = True
         server.run()  # stdio — codex 등록·로컬 검증 경로 유지
