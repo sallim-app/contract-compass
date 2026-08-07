@@ -115,13 +115,21 @@ def test_rate_limit_llm_soft_signals_instead_of_429(monkeypatch):
     assert ip == "203.0.113.9" and llm_allowed is False
 
 
-def test_xff_loopback_spoof_does_not_grant_internal_scope():
-    """외부가 XFF: 127.0.0.1을 실어도 내부 스코프·화이트리스트를 얻지 못한다."""
+def test_xff_loopback_spoof_does_not_grant_internal_scope(tmp_path):
+    """외부가 XFF: 127.0.0.1을 실어도 내부 스코프·화이트리스트를 얻지 못한다.
+
+    2026-08-04 감사 후 계약: XFF는 아예 안 본다 — nginx가 $remote_addr로 덮어쓰는
+    X-Real-IP만 신뢰. XFF에 무엇이 실리든 주체 IP에 영향을 주지 못한다.
+    """
+    limiter = rl.RateLimiter(db_path=str(tmp_path / "rl.db"))
     req = MagicMock()
-    req.headers = {"x-forwarded-for": "127.0.0.1, 198.51.100.7"}
+    req.headers = {"x-forwarded-for": "127.0.0.1, 6.6.6.6", "x-real-ip": "198.51.100.7"}
     req.client = MagicMock(host="127.0.0.1")
-    limiter = rl.RateLimiter()
-    assert limiter._get_raw_ip(req) == "198.51.100.7"
+    assert limiter._get_raw_ip(req) == "198.51.100.7"  # 루프백 스푸핑 무시 → 공개 스코프
+    # X-Real-IP 부재(nginx 미경유 = 진짜 내부 직결)에서도 XFF가 아니라 소켓 peer가 주체
+    del req.headers["x-real-ip"]
+    req.client = MagicMock(host="203.0.113.5")
+    assert limiter._get_raw_ip(req) == "203.0.113.5"
 
 
 # ── 전 LLM 경로 배선 (소스 수준) ─────────────────────────────────────────────

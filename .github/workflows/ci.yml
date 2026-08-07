@@ -20,12 +20,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: 경량 의존성 설치 (룰엔진·모델 테스트용)
-        run: pip install fastapi pydantic-settings pytest httpx
+        run: pip install fastapi pydantic-settings pytest httpx pyjwt
       - name: 룰 회귀셋 (LLM·chroma 불필요)
         run: |
           python -m pytest tests/unit/test_public_scenarios.py tests/unit/test_determinism.py \
             tests/unit/test_law_registry_integrity.py tests/unit/test_legal_basis_resolution.py \
             tests/unit/test_seo_pages.py -q
+      # 인증·레이트리밋 보안 계약 — 로컬에서만 돌고 CI에서 빠져 상시 red가
+      # 초록으로 위장됐던 파일들 (2026-08-07 T-2026W32-101). LLM·chroma 불필요.
+      - name: 인증·비용가드 계약 테스트
+        run: python -m pytest tests/unit/test_chat_access.py tests/unit/test_llm_cost_guard.py -q
 
       # 생성 SEO 페이지는 대외 주장이다 — 금액 경계·요율 진실원·금지 표현 게이트를
       # 푸시마다 돌린다. --strict는 게이트 위반 시 rc=1.

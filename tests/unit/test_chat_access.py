@@ -5,6 +5,7 @@
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import jwt as pyjwt
 import pytest
@@ -28,8 +29,9 @@ class _FakeSettings:
 
 
 class _FakeRequest:
+    # 2026-08-04 감사 후 계약: 쿼터 주체는 X-Real-IP만 신뢰 (XFF·CF 헤더는 위조 가능)
     def __init__(self, ip="1.2.3.4", token: str | None = None):
-        self.headers = {"x-forwarded-for": ip}
+        self.headers = {"x-real-ip": ip}
         if token:
             self.headers["authorization"] = f"Bearer {token}"
         self.client = None
@@ -97,17 +99,24 @@ def test_bad_jwt_rejected(monkeypatch, tmp_path):
         assert e.value.detail["error"] == "invalid_token"
 
 
-def test_client_ip_priority_cf_first(monkeypatch, tmp_path):
-    """CF-Connecting-IP > X-Real-IP > XFF — 위조 가능한 XFF가 신뢰 헤더를 못 이긴다."""
+def test_client_ip_trusts_x_real_ip_only(monkeypatch, tmp_path):
+    """X-Real-IP만 신뢰 — CF-Connecting-IP·XFF는 클라이언트가 위조 가능하므로 안 본다.
+
+    2026-08-04 감사 정정: 오리진 직결 시 CF-Connecting-IP를 마음대로 실을 수 있어
+    CF 1순위 신뢰를 폐기했다. nginx가 X-Real-IP를 $remote_addr로 덮어쓰므로
+    이 헤더만 위조 불가. 미경유(로컬 스모크)면 소켓 peer로 폴백.
+    """
     _patch(monkeypatch, tmp_path)
-    r = _FakeRequest(ip="9.9.9.9")  # XFF=9.9.9.9
+    r = _FakeRequest(ip="5.6.7.8")  # X-Real-IP=5.6.7.8
     r.headers["cf-connecting-ip"] = "1.2.3.4"
-    r.headers["x-real-ip"] = "5.6.7.8"
-    assert ca._client_ip(r) == "1.2.3.4"
-    del r.headers["cf-connecting-ip"]
+    r.headers["x-forwarded-for"] = "9.9.9.9"
     assert ca._client_ip(r) == "5.6.7.8"
+    # nginx 미경유(X-Real-IP 부재): 위조 가능 헤더 대신 소켓 peer
     del r.headers["x-real-ip"]
-    assert ca._client_ip(r) == "9.9.9.9"
+    r.client = SimpleNamespace(host="10.0.0.5")
+    assert ca._client_ip(r) == "10.0.0.5"
+    r.client = None
+    assert ca._client_ip(r) == "unknown"
 
 
 def test_secret_unset_fails_closed(monkeypatch, tmp_path):
