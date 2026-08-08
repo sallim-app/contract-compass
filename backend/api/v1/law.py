@@ -50,6 +50,10 @@ class LawSearchHit(BaseModel):
     content: str
     snippet: str
     law_ref: str
+    # 삭제·폐지 조문 경고(T-2026W32-184) — 스텁이면 인용 금지 안내, 아니면 생략
+    note: str | None = None
+    # 시맨틱 폴백 산출 표시 — 키워드 매치가 아님을 에이전트에게 공시
+    matched_by: str | None = None
 
 
 # 원문 청크의 항·호·목 표지 중복 아티팩트("① ①", "3. 3.", "가. 가.") 정규화.
@@ -98,6 +102,26 @@ def _keyword_tokens(keyword: str) -> list[str]:
         if len(t) >= 2 and t not in tokens:
             tokens.append(t)
     return tokens
+
+
+# 시맨틱 폴백 관련성 하한 (T-2026W32-184) — 코사인 거리(0~2)가 이보다 멀면 버린다.
+# 근거 실측(2026-08-09, MiniLM 384d): 관련 질의 0.70~0.81 / 역외 0.92+ / 무의미 1.01+.
+_SEMANTIC_MAX_DIST = 0.90
+
+# 삭제 스텁 조문 판정 (T-2026W32-184) — 제목 줄을 뺀 본문이 "삭제 <YYYY.M.D>"뿐인 청크.
+# 조·항 표지("제64조", "② ②", "3.")가 앞에 붙는 변형을 전부 흡수한다(코퍼스 실측).
+_DELETED_STUB_RE = re.compile(
+    r"^(?:(?:제\d+조(?:의\d+)?|[①-⑳]|\d{1,2}\.)\s*)*삭제\s*<\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?>$"
+)
+
+
+def _deleted_note(doc: str) -> str | None:
+    """삭제·폐지 스텁이면 인용 금지 경고문, 아니면 None — 모든 검색 경로 공통."""
+    body = (doc.split("\n", 1)[1] if "\n" in doc else doc).strip()
+    body = re.sub(r"\s+", " ", body)
+    if _DELETED_STUB_RE.match(body):
+        return "삭제된 조문 — 현행 법령에 규정이 없다. 판단 근거로 인용하지 말 것."
+    return None
 
 
 def _make_snippet(text: str, q: str, around: int = 80) -> str:
@@ -394,7 +418,7 @@ def search_references(
     return [_row(c) for c in chunks[:_want]]
 
 
-@router.get("/search", response_model=list[LawSearchHit])
+@router.get("/search", response_model=list[LawSearchHit], response_model_exclude_none=True)
 def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSearchHit]:
     """법령 키워드 또는 조문번호로 조문 검색.
 
@@ -435,6 +459,7 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                 content=_clean_markers(doc),
                 snippet=_clean_markers(_make_snippet(doc, keyword or article)),
                 law_ref=law_ref,
+                note=_deleted_note(doc),
             ))
 
     # 2. 키워드 본문 substring 검색 (조문번호 없거나 추가 결과)
@@ -460,6 +485,7 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                     content=_clean_markers(doc),
                     snippet=_clean_markers(_make_snippet(doc, variant)),
                     law_ref=law_ref,
+                    note=_deleted_note(doc),
                 ))
                 if len(results) >= 30:
                     break
@@ -498,20 +524,32 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                 content=_clean_markers(doc),
                 snippet=_clean_markers(_make_snippet(doc, hit_token)),
                 law_ref=law_ref,
+                note=_deleted_note(doc),
             ))
             if len(results) >= 30:
                 break
 
-    # 4. 시맨틱 폴백 (Gemini 임베딩) — substring이 전혀 안 걸리는 자연어 질의 구제.
+    # 4. 시맨틱 폴백 — substring이 전혀 안 걸리는 자연어 질의 구제.
     #    임베딩 호출 실패(쿼터 등)는 조용히 빈 결과 유지(검색 기능 자체는 죽이지 않음).
+    #    T-2026W32-184: 무의미 질의('존재하지않는법률용어_9f7c2a')에 최근접 8건이
+    #    전부 '삭제 <날짜>' 스텁으로 채워져 근거처럼 반환되던 결함 —
+    #    (a) 삭제 스텁은 후보에서 제외(짧은 스텁이 임베딩 허브가 돼 상위 독식,
+    #        구어체 질의 top-20의 17~19건이 스텁이었던 실측),
+    #    (b) 거리 하한 미달이면 0건으로 실토. 임계 0.90은 2026-08-09 실측 근거:
+    #        관련 질의 0.70~0.81 / 역외('블록체인 가스비') 0.92+ / 무의미 1.01+.
     if not results and keyword:
         try:
             qr = col.query(
-                query_texts=[keyword], n_results=8,
-                include=["documents", "metadatas"],
+                query_texts=[keyword], n_results=20,
+                include=["documents", "metadatas", "distances"],
             )
-            for doc, meta in zip((qr.get("documents") or [[]])[0],
-                                 (qr.get("metadatas") or [[]])[0]):
+            for doc, meta, dist in zip((qr.get("documents") or [[]])[0],
+                                       (qr.get("metadatas") or [[]])[0],
+                                       (qr.get("distances") or [[]])[0]):
+                if dist is not None and dist > _SEMANTIC_MAX_DIST:
+                    break  # 거리 오름차순 — 이후는 전부 하한 미달
+                if _deleted_note(doc):
+                    continue  # 삭제 스텁은 시맨틱 근거가 될 수 없다
                 law_ref = meta.get("law_ref") or ""
                 if law_ref in seen_refs:
                     continue
@@ -522,7 +560,10 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                     content=_clean_markers(doc),
                     snippet=_clean_markers(_make_snippet(doc, keyword)),
                     law_ref=law_ref,
+                    matched_by="semantic",
                 ))
+                if len(results) >= 8:
+                    break
         except Exception:  # noqa: BLE001 — 임베딩 장애 시 키워드 결과만으로 동작
             pass
 

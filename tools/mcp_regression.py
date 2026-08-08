@@ -156,6 +156,15 @@ CASES = [
      "search_law",               # 조문이 안 잡히고 동음이의 '지적(地籍) 정리'가 상위로
      {"query": "분할발주 금지", "top_k": 5},          # 나왔다 — glossary aliases 회귀
      lambda d: any("제68조" in (h.get("law_ref") or "") for h in d.get("hits", []))),
+    ("R21-무의미질의-0건실토",     # 존재하지 않는 용어에 시맨틱 폴백이 '삭제' 스텁 8건을
+     "search_law",               # 근거처럼 반환했다(T-2026W32-184) — 관련성 하한 미달은
+     {"query": "존재하지않는법률용어_9f7c2a", "top_k": 8},   # 0건 + 재질의 hint여야 한다
+     lambda d: d.get("count") == 0 and not d.get("hits") and "hint" in d),
+    ("R22-삭제조문-표시",         # 삭제 스텁 조문이 경고 없이 정상 조문처럼 나오면
+     "search_law",               # 에이전트가 근거로 인용한다 — note로 삭제 사실 공시
+     {"query": "공유재산법 시행령 제64조", "top_k": 3},
+     lambda d: any("삭제" in (h.get("note") or "")
+                   for h in d.get("hits", []) if "제64조" in (h.get("law_ref") or ""))),
 ]
 
 

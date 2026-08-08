@@ -300,6 +300,7 @@ def search_law(query: str, top_k: int = 8) -> dict:
     """법령 조문 검색 — 키워드 또는 조문번호로 조문 스니펫 반환(상위 top_k건).
 
     전문이 필요하면 get_law_article(ref)로 이어서 조회.
+    hit에 note가 있으면 삭제·폐지된 조문이다 — 판단 근거로 인용하지 마라.
 
     Args:
         query: "수의계약", "시행령 제26조", "제21조" 등
