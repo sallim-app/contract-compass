@@ -8,6 +8,11 @@ issue_key.py(CLI)와 server.py의 구매 웹훅이 공유한다. 저장소는 da
   key_hash·key_prefix·name·is_active·created_at·expires_at·daily_limit (기존)
   + channel("manual"|"kmong"|"lemonsqueezy"…) · amount_krw · contact · order_id
   + source("self"=cc_live_ 자체 발급 | "ls_mirror"=Lemon Squeezy 라이선스 키 미러)
+  + owner(누구 것인가 — 필수) · purpose(왜 발급했나) · is_internal(우리 것인가,
+    2026-08-09 T-2026W32-85 realty-mcp 이식 — 분모 오염 방지: 종전엔 name 자유 메모뿐이라
+    QA 키와 구매자 키를 로그만 보고 구분할 수 없었다. realty-mcp에서 유료 호출 52건 전량이
+    우리 QA 키인데 집계가 '유료 순사용자 3명'으로 읽은 실사고의 재발 방지다.
+    auth.resolve_access가 paid Access에 owner·is_internal을 그대로 싣는다.)
 """
 from __future__ import annotations
 
@@ -52,15 +57,24 @@ def _locked_update(fn):
 
 def issue(name: str, days: int = 30, daily: int = 2000, *,
           channel: str = "manual", amount_krw: int = 0, contact: str = "",
-          order_id: str = "", key: str | None = None, source: str = "self") -> tuple[str | None, dict]:
+          order_id: str = "", key: str | None = None, source: str = "self",
+          owner: str = "", purpose: str = "", internal: bool = False) -> tuple[str | None, dict]:
     """키 등록. key=None이면 cc_live_ 신규 생성(평문 반환), 지정 시 미러(평문 미반환).
 
     order_id가 이미 대장에 있으면 발급하지 않고 기존 레코드 반환(웹훅 재전송 멱등).
+
+    **owner는 필수다** (T-2026W32-85). 명시가 없으면 contact → order_id 순으로 파생한다 —
+    웹훅 판매분은 이메일·주문번호가 항상 있어 호출부 수정 없이 구매자로 귀속된다.
+    셋 다 비면 ValueError: 소유자 미상 키를 조용히 만들면 분모가 다시 오염된다.
     """
     if order_id:
         existing = find_by_order(order_id)
         if existing:
             return None, existing
+    owner = owner or contact or order_id
+    if not owner:
+        raise ValueError("owner는 필수다 — 구매자 식별자(주문번호·연락처) 또는 "
+                         "내부 키면 owner='naru-qa', internal=True로 발급하라")
     plaintext = None
     if key is None:
         plaintext = key = f"cc_live_{_secrets.token_hex(32)}"
@@ -69,6 +83,9 @@ def issue(name: str, days: int = 30, daily: int = 2000, *,
         "key_hash": hashlib.sha256(key.encode()).hexdigest(),
         "key_prefix": key[:16],
         "name": name,
+        "owner": owner,           # 누구 것인가 — 구매자 식별(주문번호·연락처 등)
+        "purpose": purpose,       # 왜 발급했나 — 판매/QA/데모
+        "is_internal": internal,  # 우리 것인가 — 집계 분모에서 제외되는 유일한 근거
         "is_active": True,
         "created_at": now.isoformat(timespec="seconds"),
         "expires_at": (now + timedelta(days=days)).isoformat(timespec="seconds"),
@@ -182,9 +199,11 @@ def report() -> str:
         u = usage.get(r.get("key_prefix", ""), 0)
         exp = str(r.get("expires_at", ""))[:10]
         flag = " ⚠️D-7" if r in expiring else ""
-        lines.append(f"  {r.get('key_prefix')}  ~{exp}{flag}  {r.get('daily_limit')}콜/일  "
+        # 내부 키를 눈에 띄게 — 이 목록을 보고 '유료 고객 N명'으로 오독하지 않게.
+        kind = "내부" if r.get("is_internal") else ("외부" if "is_internal" in r else "미상")
+        lines.append(f"  {r.get('key_prefix')}  {kind}  ~{exp}{flag}  {r.get('daily_limit')}콜/일  "
                      f"7일사용 {u}  [{r.get('channel', '?')}/{r.get('source', 'self')}] "
-                     f"{r.get('name', '')} {r.get('contact', '')}")
+                     f"{r.get('owner') or r.get('name', '')} {r.get('contact', '')}")
     if not active:
         lines.append("  (없음)")
     return "\n".join(lines)

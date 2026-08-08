@@ -27,6 +27,26 @@ def test_issue_self_returns_plaintext_and_extended_fields():
     assert rec["contact"] == "a@b.c" and rec["source"] == "self"
 
 
+def test_issue_requires_owner():
+    """T-2026W32-85: 소유자 미상 키 발급 금지 — owner·contact·order_id 셋 다 비면 거부.
+
+    realty-mcp 실사고 재발 방지: name 자유 메모뿐이면 QA 키가 유료 분모에 섞인다."""
+    with pytest.raises(ValueError, match="owner"):
+        keystore.issue("QA용")
+    assert keystore.list_keys() == []   # 거부된 발급이 대장에 남으면 안 된다
+
+
+def test_issue_owner_derivation_and_internal_flag():
+    """owner 미명시 시 contact → order_id 순 파생(웹훅 호출부 무수정 귀속)."""
+    _, by_contact = keystore.issue("LS", key="K-c", contact="buyer@x.com", order_id="ls-1")
+    assert by_contact["owner"] == "buyer@x.com"
+    assert by_contact["is_internal"] is False       # 판매분 기본값 = 외부(분모 포함)
+    _, by_order = keystore.issue("Creem", key="K-o", order_id="creem-77")
+    assert by_order["owner"] == "creem-77"
+    _, qa = keystore.issue("야간QA", owner="naru-qa", purpose="QA", internal=True)
+    assert qa["owner"] == "naru-qa" and qa["is_internal"] is True and qa["purpose"] == "QA"
+
+
 def test_issue_mirror_no_plaintext():
     """LS 미러 — 외부 키를 해시 등록, 평문 반환 없음."""
     key, rec = keystore.issue("LS 30일", 30, 2000, channel="lemonsqueezy",
@@ -52,8 +72,8 @@ def test_revoke_by_order_for_refund():
 
 
 def test_report_aggregates_revenue_and_expiring():
-    keystore.issue("A", days=2, channel="kmong", amount_krw=9900)     # D-7 임박
-    keystore.issue("B", days=60, channel="lemonsqueezy", amount_krw=24900)
+    keystore.issue("A", days=2, channel="kmong", amount_krw=9900, owner="크몽#A")  # D-7 임박
+    keystore.issue("B", days=60, channel="lemonsqueezy", amount_krw=24900, owner="ls#B")
     out = keystore.report()
     assert "만료임박(D-7) 1" in out
     assert "9,900원" in out and "24,900원" in out and "34,800원" in out
