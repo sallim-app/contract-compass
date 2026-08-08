@@ -55,6 +55,19 @@ def _locked_update(fn):
     return result
 
 
+def _contact_owner(contact: str) -> str:
+    """이메일 파생 owner — `c:` 접두 salt 해시 12자. salt 불가·contact 공란이면 빈 문자열.
+
+    auth.subject_hash(logs/.subject_salt)를 그대로 쓴다 — salt를 이 파일이 따로 들면
+    두 파일이 서로 다른 salt로 갈라져도 아무도 모른다. `owner|` 접두는 IP 해시와
+    입력 공간을 분리하려는 것(같은 salt로 두 종류를 해싱하므로)."""
+    if not contact:
+        return ""
+    import auth  # mcp/ 평면 모듈 — server.py와 같은 방식. auth는 keystore를 모른다(순환 없음)
+    h = auth.subject_hash(f"owner|{contact}")
+    return f"c:{h}" if h else ""
+
+
 def issue(name: str, days: int = 30, daily: int = 2000, *,
           channel: str = "manual", amount_krw: int = 0, contact: str = "",
           order_id: str = "", key: str | None = None, source: str = "self",
@@ -63,21 +76,25 @@ def issue(name: str, days: int = 30, daily: int = 2000, *,
 
     order_id가 이미 대장에 있으면 발급하지 않고 기존 레코드 반환(웹훅 재전송 멱등).
 
-    **owner는 필수다** (T-2026W32-85). 명시가 없으면 order_id → contact 순으로 파생한다 —
-    웹훅 판매분은 주문번호·이메일이 항상 있어 호출부 수정 없이 구매자로 귀속된다.
+    **owner는 필수다** (T-2026W32-85). 명시가 없으면 contact → order_id 순으로 파생한다 —
+    웹훅 판매분은 이메일·주문번호가 항상 있어 호출부 수정 없이 구매자로 귀속된다.
     셋 다 비면 ValueError: 소유자 미상 키를 조용히 만들면 분모가 다시 오염된다.
 
-    **contact(이메일) 파생분은 해시로 줄여 담는다** — owner는 auth.access_fields를 타고
-    키 대장(0600)보다 넓은 호출 로그(mcp_calls.jsonl, 0644)에 매 호출 기록되므로,
-    원문 이메일을 owner에 복사하면 개인정보가 보호 경계 밖으로 샌다(2026-08-09 codex 지적).
-    원문은 기존 contact 필드(대장 안)에만 남는다 — 운영자는 report()에서 둘 다 본다.
+    파생 순서와 해시(2026-08-09 codex 2라운드 반영):
+    - **contact(이메일)가 order_id보다 먼저다** — order_id는 구매 건마다 새 값이라
+      재구매·갱신 때마다 owner가 갈라져 유료 순사용자가 주문 수만큼 부풀려진다.
+      contact는 구매자 고유라 키가 여럿이어도 한 사람으로 접힌다.
+    - **contact 파생분은 salt 해시(auth.subject_hash 재사용)로 담는다** — owner는
+      auth.access_fields를 타고 키 대장(0600)보다 넓은 호출 로그(mcp_calls.jsonl,
+      0644)에 매 호출 기록되므로 원문 이메일 복사는 보호 경계 밖 노출이고, salt 없는
+      해시는 추정 이메일 사전 대조로 즉시 복원된다. 원문은 대장 안 contact 필드에만 —
+      운영자는 report()에서 둘 다 본다. salt를 못 쓰면 order_id로 폴백(귀속은 유지).
     """
     if order_id:
         existing = find_by_order(order_id)
         if existing:
             return None, existing
-    owner = owner or order_id or (
-        f"c:{hashlib.sha256(contact.encode()).hexdigest()[:12]}" if contact else "")
+    owner = owner or _contact_owner(contact) or order_id
     if not owner:
         raise ValueError("owner는 필수다 — 구매자 식별자(주문번호·연락처) 또는 "
                          "내부 키면 owner='naru-qa', internal=True로 발급하라")
