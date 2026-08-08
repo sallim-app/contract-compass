@@ -63,15 +63,21 @@ def issue(name: str, days: int = 30, daily: int = 2000, *,
 
     order_id가 이미 대장에 있으면 발급하지 않고 기존 레코드 반환(웹훅 재전송 멱등).
 
-    **owner는 필수다** (T-2026W32-85). 명시가 없으면 contact → order_id 순으로 파생한다 —
-    웹훅 판매분은 이메일·주문번호가 항상 있어 호출부 수정 없이 구매자로 귀속된다.
+    **owner는 필수다** (T-2026W32-85). 명시가 없으면 order_id → contact 순으로 파생한다 —
+    웹훅 판매분은 주문번호·이메일이 항상 있어 호출부 수정 없이 구매자로 귀속된다.
     셋 다 비면 ValueError: 소유자 미상 키를 조용히 만들면 분모가 다시 오염된다.
+
+    **contact(이메일) 파생분은 해시로 줄여 담는다** — owner는 auth.access_fields를 타고
+    키 대장(0600)보다 넓은 호출 로그(mcp_calls.jsonl, 0644)에 매 호출 기록되므로,
+    원문 이메일을 owner에 복사하면 개인정보가 보호 경계 밖으로 샌다(2026-08-09 codex 지적).
+    원문은 기존 contact 필드(대장 안)에만 남는다 — 운영자는 report()에서 둘 다 본다.
     """
     if order_id:
         existing = find_by_order(order_id)
         if existing:
             return None, existing
-    owner = owner or contact or order_id
+    owner = owner or order_id or (
+        f"c:{hashlib.sha256(contact.encode()).hexdigest()[:12]}" if contact else "")
     if not owner:
         raise ValueError("owner는 필수다 — 구매자 식별자(주문번호·연락처) 또는 "
                          "내부 키면 owner='naru-qa', internal=True로 발급하라")

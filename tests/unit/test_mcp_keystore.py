@@ -37,12 +37,16 @@ def test_issue_requires_owner():
 
 
 def test_issue_owner_derivation_and_internal_flag():
-    """owner 미명시 시 contact → order_id 순 파생(웹훅 호출부 무수정 귀속)."""
-    _, by_contact = keystore.issue("LS", key="K-c", contact="buyer@x.com", order_id="ls-1")
-    assert by_contact["owner"] == "buyer@x.com"
-    assert by_contact["is_internal"] is False       # 판매분 기본값 = 외부(분모 포함)
-    _, by_order = keystore.issue("Creem", key="K-o", order_id="creem-77")
-    assert by_order["owner"] == "creem-77"
+    """owner 미명시 시 order_id → contact 순 파생(웹훅 호출부 무수정 귀속).
+
+    contact(이메일) 파생분은 해시로 담는다 — owner는 0644 호출 로그에 매 호출
+    실리므로 원문 이메일이 키 대장(0600) 밖으로 새면 안 된다(codex 지적)."""
+    _, by_order = keystore.issue("LS", key="K-c", contact="buyer@x.com", order_id="ls-1")
+    assert by_order["owner"] == "ls-1"              # order_id가 contact보다 먼저
+    assert by_order["is_internal"] is False         # 판매분 기본값 = 외부(분모 포함)
+    _, by_contact = keystore.issue("문의고객", contact="buyer@x.com")
+    assert by_contact["owner"].startswith("c:") and "buyer" not in by_contact["owner"]
+    assert by_contact["contact"] == "buyer@x.com"   # 원문은 대장 안 contact에만
     _, qa = keystore.issue("야간QA", owner="naru-qa", purpose="QA", internal=True)
     assert qa["owner"] == "naru-qa" and qa["is_internal"] is True and qa["purpose"] == "QA"
 
