@@ -53,8 +53,8 @@ def test_issue_owner_derivation_and_internal_flag():
     assert k1["owner"].startswith("c:") and "buyer" not in k1["owner"]
     assert k1["contact"] == "buyer@x.com"       # 원문은 대장 안 contact에만
     assert k1["is_internal"] is False           # 판매분 기본값 = 외부(분모 포함)
-    _, k2 = keystore.issue("재구매", key="K-c2", contact="buyer@x.com", order_id="ls-2")
-    assert k2["owner"] == k1["owner"]           # 같은 구매자 = 같은 owner(순사용자 1명)
+    _, k2 = keystore.issue("재구매", key="K-c2", contact=" Buyer@X.com ", order_id="ls-2")
+    assert k2["owner"] == k1["owner"]           # 같은 구매자 = 같은 owner(대소문자·공백 정규화)
     _, by_order = keystore.issue("Creem", key="K-o", order_id="creem-77")
     assert by_order["owner"] == "creem-77"      # contact 없으면 order_id 폴백
     _, qa = keystore.issue("야간QA", owner="naru-qa", purpose="QA", internal=True)

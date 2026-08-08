@@ -61,6 +61,8 @@ def _contact_owner(contact: str) -> str:
     auth.subject_hash(logs/.subject_salt)를 그대로 쓴다 — salt를 이 파일이 따로 들면
     두 파일이 서로 다른 salt로 갈라져도 아무도 모른다. `owner|` 접두는 IP 해시와
     입력 공간을 분리하려는 것(같은 salt로 두 종류를 해싱하므로)."""
+    # 대소문자·공백만 다른 같은 이메일이 다른 owner로 갈라지지 않게 정규화(codex 3R)
+    contact = (contact or "").strip().lower()
     if not contact:
         return ""
     import auth  # mcp/ 평면 모듈 — server.py와 같은 방식. auth는 keystore를 모른다(순환 없음)
