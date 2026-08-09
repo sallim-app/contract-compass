@@ -61,7 +61,28 @@ claude mcp add --transport http contract-compass https://contract.sallim.app/mcp
 
 ChatGPT: Settings → Connectors → Developer mode에서 위 URL을 커넥터로 추가.
 
+설치했으면 AI에게 이렇게 물어 30초 안에 확인하세요 —
+*"국가기관이 2,000만원짜리 물품을 사려는데 어떤 계약방법을 쓸 수 있어? 근거 조문도."*
+소액수의계약과 **국가계약법 시행령 제26조 제1항 제5호**가 나오면 정상입니다.
+
 도구 명세·아키텍처·한도 정책 상세는 [docs/MCP.md](docs/MCP.md) 참조.
+
+### 평가셋 — 우리 판정을 남이 되짚을 수 있게
+
+이 서버가 무엇을 맞히고 무엇을 못 맞히는지는 [`evaluation.xml`](evaluation.xml)에
+공개돼 있습니다(16문항, 답은 전부 실측값). 지어낸 문항은 없습니다 — 미검증 문항은
+회귀 검사를 거짓 실패시키기 때문입니다.
+
+기계 검증은 결정론 회귀 하네스가 합니다. LLM을 쓰지 않아 비용 없이 재현됩니다:
+
+```bash
+python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp
+# 22 케이스 · exit 0=전부 PASS / 1=회귀 존재 / 2=서버 미도달
+```
+
+각 케이스는 과거에 **실제로 발견·수리된 결함**의 회귀입니다(삭제된 조문을 근거처럼
+반환하던 문제, 지자체 판정에 국가 수치가 섞이던 문제 등). 무료 티어는 IP당 50콜/일이고
+이 스위트가 22콜을 쓰므로 하루 2회가 한계입니다.
 
 금액구간별 계약방법·수의계약 사유·용어 가이드 페이지(`/g/`)의 생성·검증·배포 절차는
 [docs/PROGRAMMATIC_SEO.md](docs/PROGRAMMATIC_SEO.md) 참조 — 룰셋에서 파생 생성하므로

@@ -7,15 +7,26 @@ mcp-tool-design §1-4의 2층 평가 중 '크론 가능한 층': LLM 평가(code
 
 exit 0=전부 PASS / 1=회귀 존재 / 2=수집 실패(MCP 미도달)
 사용: python3 tools/mcp_regression.py   (localhost:8403 — 루프백 무제한 티어)
+
+**외부 재현**(2026-08-09, T-2026W32-83): 평가셋이 우리 몫이라면 남이 우리 판정을 되짚을 수
+있어야 한다. 엔드포인트를 바꿔 공개 서버에 그대로 돌릴 수 있다 —
+
+    python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp
+
+주의: 공개 엔드포인트는 무료 IP당 50콜/일 한도가 걸리고 이 스위트가 케이스당 1콜씩
+쓰므로(현재 22콜) 하루 2회가 한계다. 한도를 넘기면 도구가 구조화 오류를 반환해 FAIL이
+아니라 **수집 실패로 보이지 않는 FAIL**이 되니, 판정 전 출력의 오류 메시지를 확인하라.
+사람이 읽는 문항지는 저장소 루트 `evaluation.xml`이다.
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import httpx
 
-MCP = "http://localhost:8403/mcp"
+MCP = os.environ.get("CC_MCP_ENDPOINT", "http://localhost:8403/mcp")
 H = {"Content-Type": "application/json",
      "Accept": "application/json, text/event-stream"}
 
@@ -169,6 +180,15 @@ CASES = [
 
 
 def main() -> int:
+    global MCP
+    argv = sys.argv[1:]
+    if "--endpoint" in argv:
+        i = argv.index("--endpoint")
+        if i + 1 >= len(argv):
+            print("[ERR ] --endpoint 뒤에 URL이 없다")
+            return 2
+        MCP = argv[i + 1]
+    print(f"# 대상 {MCP} · 케이스 {len(CASES)}건")
     try:
         s = Session()
     except Exception as e:  # noqa: BLE001
