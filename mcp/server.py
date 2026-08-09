@@ -664,8 +664,16 @@ async def _creem_webhook(raw: bytes, request):  # noqa: ANN001
         if not lic:
             # 대시보드에서 상품의 License Key 기능이 꺼져 있으면 여기로 온다 —
             # 조용히 넘기면 고객이 결제하고도 키를 못 받는다. 로그에 크게 남긴다.
+            def _shape(o, depth=0):
+                # 값은 빼고 키 구조만 — 키 경로 규명용(PII·키 원문 로그 금지)
+                if isinstance(o, dict):
+                    return {k: _shape(v, depth + 1) if depth < 3 else "…" for k, v in o.items()}
+                if isinstance(o, list):
+                    return [_shape(o[0], depth + 1)] if o else []
+                return type(o).__name__
             print(f"[purchase-webhook] Creem checkout.completed에 라이선스 키 없음 — "
-                  f"상품 {product_id} License 기능 토글 확인 필요 (order={_order_ref()})",
+                  f"상품 {product_id} License 기능 토글 확인 필요 (order={_order_ref()}) "
+                  f"payload구조={_json.dumps(_shape(payload), ensure_ascii=False)[:1500]}",
                   file=sys.stderr, flush=True)
             return JSONResponse({"ok": False, "warning": "no_license_key",
                                  "hint": "Creem 대시보드에서 해당 상품 License Key 기능 활성 필요"})
