@@ -8,10 +8,9 @@
 
 기계 검증은 하위 계층인 `tools/mcp_regression.py`가 한다. 그쪽은 "도구가 그 답을 만들
 재료를 실제로 내놓는가"를 구조 성질(부등호·필드 존재·공시 문구)로 검사하며, LLM을 쓰지
-않아 무료로 재현 가능하다:
-
-    python3 tools/mcp_regression.py                                  # 로컬 stdio/HTTP
-    python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp   # 공개 원격
+않아 무료로 재현 가능하다. 인자 없이 돌리면 로컬, 엔드포인트 인자를 주면 공개 서버를
+겨눈다 — 실행 방법은 README의 "평가셋" 절 참조(XML 주석에는 명령행 하이픈을 그대로
+쓸 수 없어 여기 적지 않는다).
 
 안정성 등급:
   stable   법령·룰셋에 박힌 성질(조문 인용·판정 결과·공시 문구). 개정 전까지 안 변한다.
