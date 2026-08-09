@@ -661,25 +661,13 @@ async def _creem_webhook(raw: bytes, request):  # noqa: ANN001
         product_id = product.get("id") if isinstance(product, dict) else (product if isinstance(product, str) else "")
         plan = _creem_plans().get(str(product_id), {})
         lic = _walk_find(obj, "license", as_dict_with="key")
-        if not lic:
-            # 대시보드에서 상품의 License Key 기능이 꺼져 있으면 여기로 온다 —
-            # 조용히 넘기면 고객이 결제하고도 키를 못 받는다. 로그에 크게 남긴다.
-            def _shape(o, depth=0):
-                # 값은 빼고 키 구조만 — 키 경로 규명용(PII·키 원문 로그 금지)
-                if isinstance(o, dict):
-                    return {k: _shape(v, depth + 1) if depth < 3 else "…" for k, v in o.items()}
-                if isinstance(o, list):
-                    return [_shape(o[0], depth + 1)] if o else []
-                return type(o).__name__
-            print(f"[purchase-webhook] Creem checkout.completed에 라이선스 키 없음 — "
-                  f"상품 {product_id} License 기능 토글 확인 필요 (order={_order_ref()}) "
-                  f"payload구조={_json.dumps(_shape(payload), ensure_ascii=False)[:1500]}",
-                  file=sys.stderr, flush=True)
-            return JSONResponse({"ok": False, "warning": "no_license_key",
-                                 "hint": "Creem 대시보드에서 해당 상품 License Key 기능 활성 필요"})
         customer = obj.get("customer") or {}
         email = customer.get("email", "") if isinstance(customer, dict) else ""
-        _, rec = keystore.issue(
+        # 라이선스 미러 vs 자체 발급 (2026-08-09 설계 전환): API로 생성한 상품에는
+        # Creem이 토글과 무관하게 라이선스를 안 붙인다(실결제 3회 실측 — payload에
+        # license 필드 자체가 없음). 실려 오면 미러, 없으면 우리 키를 자체 발급하고
+        # 성공 페이지(/mcp/purchase-success)에서 1회 공개로 전달한다.
+        plain, rec = keystore.issue(
             name=plan.get("label", f"Creem {product_id}"),
             days=int(plan.get("days", 30)),
             daily=int(plan.get("daily", 2000)),
@@ -687,9 +675,12 @@ async def _creem_webhook(raw: bytes, request):  # noqa: ANN001
             amount_krw=int(plan.get("amount_krw", 0)),
             contact=email,
             order_id=_order_ref(),
-            key=lic, source="creem_mirror",
+            key=lic, source="creem_mirror" if lic else "self_issued",
         )
-        return JSONResponse({"ok": True, "key_prefix": rec["key_prefix"]})
+        if plain and not lic:
+            _pending_put(_order_ref(), plain)
+        return JSONResponse({"ok": True, "key_prefix": rec["key_prefix"],
+                             "delivery": "creem_license" if lic else "success_page"})
 
     if event in ("refund.created", "subscription.expired", "subscription.canceled",
                  "dispute.created"):
@@ -697,6 +688,96 @@ async def _creem_webhook(raw: bytes, request):  # noqa: ANN001
         return JSONResponse({"ok": True, "revoked": bool(rec)})
 
     return JSONResponse({"ok": True, "ignored": event})
+
+
+# ── 자체 발급 키의 성공 페이지 전달 (2026-08-09) ──────────────────────────────
+# 평문 키는 대장에 해시로만 남으므로, 웹훅 발급 직후 주문번호→평문을 임시 보관했다가
+# 성공 페이지에서 딱 1회 보여주고 지운다. 결제 사실은 쿼리 파라미터를 믿지 않고
+# 서버→Creem API 대조로 확인한다(리다이렉트 서명이 문서화돼 있지 않음).
+_PENDING_PATH = Path(__file__).parent.parent / "data" / "pending_keys.json"
+_PENDING_TTL = 48 * 3600
+
+
+def _pending_load() -> dict:
+    try:
+        return _json.loads(_PENDING_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _pending_save(d: dict) -> None:
+    _PENDING_PATH.write_text(_json.dumps(d, ensure_ascii=False))
+    os.chmod(_PENDING_PATH, 0o600)
+
+
+def _pending_put(order_ref: str, plain: str) -> None:
+    d = _pending_load()
+    now = time.time()
+    d = {k: v for k, v in d.items() if now - v.get("ts", 0) < _PENDING_TTL}
+    d[order_ref] = {"key": plain, "ts": now}
+    _pending_save(d)
+
+
+def _pending_claim(order_ref: str) -> str | None:
+    d = _pending_load()
+    ent = d.pop(order_ref, None)
+    if ent:
+        _pending_save(d)
+        return ent.get("key")
+    return None
+
+
+def _creem_api_base_key() -> tuple[str, str]:
+    live = os.environ.get("CREEM_LIVE_MODE", "") == "1"
+    key = os.environ.get("CREEM_API_KEY", "")
+    return ("https://api.creem.io/v1" if live else "https://test-api.creem.io/v1", key)
+
+
+async def _purchase_success(request):  # noqa: ANN001
+    from starlette.responses import HTMLResponse
+    checkout_id = request.query_params.get("checkout_id", "")
+    order_id = request.query_params.get("order_id", "")
+    base, api_key = _creem_api_base_key()
+
+    def _page(title: str, body: str, code: int = 200):
+        return HTMLResponse(
+            f'<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>{title}</title><style>body{{font-family:system-ui,sans-serif;'
+            f'max-width:640px;margin:12vh auto 0;padding:0 24px;line-height:1.7}}'
+            f'code{{background:#f2f2f2;padding:.3em .5em;border-radius:4px;'
+            f'word-break:break-all;display:inline-block}}</style></head>'
+            f'<body><h1>{title}</h1>{body}'
+            f'<p>문의: contract@sallim.app</p></body></html>', status_code=code)
+
+    if not (checkout_id and order_id and api_key):
+        return _page("확인 불가", "<p>주문 정보가 없습니다. 결제 완료 화면에서 다시 이동해 주세요.</p>", 400)
+    # 결제 사실을 Creem에 직접 확인 — 파라미터 위조로는 남의 키를 못 꺼낸다
+    # (주문번호 일치 + paid 상태 + 미수령 상태가 전부 맞아야 1회 공개).
+    try:
+        async with httpx.AsyncClient(timeout=10) as cli:
+            r = await cli.get(f"{base}/checkouts", params={"checkout_id": checkout_id},
+                              headers={"x-api-key": api_key})
+        chk = r.json() if r.status_code == 200 else {}
+    except Exception:
+        chk = {}
+    order = chk.get("order") or {}
+    if not (order.get("id") == order_id and order.get("status") == "paid"):
+        return _page("결제 확인 실패", "<p>결제 확인에 실패했습니다. 잠시 후 새로고침하거나 문의해 주세요.</p>", 404)
+    plain = _pending_claim(f"creem-{order_id}")
+    if plain:
+        return _page("결제 완료 — 라이선스 키",
+                     f"<p>아래 키는 <b>이 화면에서 딱 한 번만</b> 표시됩니다. 지금 복사해 보관하세요.</p>"
+                     f"<p><code>{plain}</code></p>"
+                     f"<p>사용법: MCP 클라이언트 헤더 <code>Authorization: Bearer &lt;키&gt;</code>. "
+                     f"자세한 안내는 <a href='{PRICING_URL}'>요금 페이지</a> 참조.</p>")
+    import keystore
+    rec = keystore.find_by_order(f"creem-{order_id}")
+    if rec:
+        return _page("이미 발급된 주문",
+                     f"<p>이 주문의 키(접두 <code>{rec.get('key_prefix', '')}</code>)는 이미 표시됐습니다. "
+                     f"분실하셨으면 주문번호와 함께 문의해 주세요.</p>")
+    return _page("처리 중", "<p>결제 확인은 됐지만 키 발급이 아직입니다. 몇 초 후 새로고침해 주세요.</p>", 202)
 
 
 async def _purchase_webhook(request):  # noqa: ANN001
@@ -755,6 +836,8 @@ async def _purchase_webhook(request):  # noqa: ANN001
 
 for _wp in ("/purchase-webhook", "/mcp/purchase-webhook"):
     server.custom_route(_wp, methods=["POST"], include_in_schema=False)(_purchase_webhook)
+for _sp in ("/purchase-success", "/mcp/purchase-success"):
+    server.custom_route(_sp, methods=["GET"], include_in_schema=False)(_purchase_success)
 
 
 if __name__ == "__main__":
