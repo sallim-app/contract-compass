@@ -73,7 +73,7 @@ ChatGPT: Settings → Connectors → Developer mode에서 위 URL을 커넥터�
 ```
 backend/    FastAPI — 룰엔진·RAG·LLM 연동 (frontend/dist 정적 서빙 포함, :8402)
 frontend/   React + TypeScript (Vite) — 위저드 UI
-mcp/        MCP 서버 — stdio(로컬) / Streamable HTTP(:8403, 원격) · 무LLM 도구 6종
+mcp/        MCP 서버 — stdio(로컬) / Streamable HTTP(:8403, 원격) · 무LLM 도구 8종
 edge/       Cloudflare Worker (contract-edge) — 장애 폴백 게이트 · law API 엣지 캐시
 rules/      계약 룰셋 JSON (contract_rules·law_registry 등) ← 결정론 핵심
 tools/      법령·예규·별표 수집/인덱싱 파이프라인 (law.go.kr Open API) · 가이드 페이지 생성기

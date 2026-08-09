@@ -11,7 +11,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://contract.sallim.app/mcp"
+      "url": "https://contract.sallim.app/mcp?via=official"
     }
   ]
 }

@@ -131,6 +131,10 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotent
 # 사용자 승인을 받게 한다(비대화 codex는 자동 취소될 수 있음 — 제보는 선택 기능이라 허용).
 WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 
+# server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
+# 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
+SERVER_VERSION = "1.1.2"
+
 server = MCPServer(
     name="contract-compass",
     title="AI 계약나침반 (Contract Compass)",
@@ -150,7 +154,7 @@ server = MCPServer(
         "사용자가 오류를 지적하면 report_issue로 제보하라(사용자에게 알리고). "
         "답변은 정보 제공용이며 법적 자문이 아니다."
     ),
-    version="1.1.0",
+    version=SERVER_VERSION,
 )
 server.middleware.append(QuotaGate())  # tools/call 티어 게이트 + 호출 로그
 
@@ -520,8 +524,10 @@ async def _health(request):  # noqa: ANN001 — Starlette Request
     except OSError:
         pass
     ok = backend == 200
+    # version: 클라이언트 스테일 도구목록 캐시 판별의 유일한 단서(realty 재검증 제보 #16
+    # 교훈 이식 — 배포 후 옛 목록으로 '미배포' 오탐 신고가 왔던 자리).
     return JSONResponse({"status": "ok" if ok else "degraded", "backend_ready": backend,
-                         "data_as_of": data_as_of},
+                         "data_as_of": data_as_of, "version": SERVER_VERSION},
                         status_code=200 if ok else 503)
 
 
@@ -539,7 +545,7 @@ _PRICING_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
 반환합니다. 무료로 전 도구를 쓸 수 있고, 유료 키는 <b>한도만</b> 올립니다(기능 차이 없음).</p>
 <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
 <tr><th>티어</th><th>일일 한도</th><th>기능</th><th>가격</th></tr>
-<tr><td>무료</td><td>IP당 50콜 (UTC 자정 리셋)</td><td>도구 6종 전부</td><td>0원</td></tr>
+<tr><td>무료</td><td>IP당 50콜 (UTC 자정 리셋)</td><td>도구 8종 전부</td><td>0원</td></tr>
 <tr><td>체험 키</td><td>키당 2,000콜</td><td>동일</td><td>7일 1,000원</td></tr>
 <tr><td>PRO 키</td><td>키당 2,000콜</td><td>동일 + 우선 지원</td><td>30일 9,900원 · 90일 24,900원</td></tr>
 </table>
