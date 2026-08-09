@@ -29,6 +29,14 @@ PUBLIC = BASE / "frontend" / "public"
 SITEMAP = PUBLIC / "sitemap.xml"
 HOST = "contract.sallim.app"
 ENDPOINT = "https://api.indexnow.org/IndexNow"
+# UA를 안 붙이면 urllib 기본값 `Python-urllib/3.x`가 나가고 Cloudflare가 그것을 403으로
+# 끊는다 — `--verify-live`가 표본 전건 ERR로 떨어져 **게이트가 원리적으로 통과 불가**였다
+# (2026-08-10 실측: UA 미지정 403 / 자체 식별 UA 200, 같은 URL·같은 순간).
+# 실패는 문구+rc=1로 정직하게 나오지만, 이 도구를 부르는 CI·cron이 없어 그 rc를 읽는 쪽이
+# 없다 — 현행 CF 정책하에선 사람이 수동으로 불러도 게이트를 넘길 수 없었다(제출 이력 자체는
+# `--yes` 우회 경로가 있어 코드만으로 확정 불가).
+# 사람 UA로 위장하지 않는다(T-2026W32-122: 우리 점검이 방문자 통계에 사람으로 집계된다).
+UA = "naru-indexnow-verify/1.0 (+https://contract.sallim.app)"
 
 
 def find_key() -> str | None:
@@ -56,7 +64,7 @@ def check_live(urls: list[str], limit: int = 8) -> bool:
     ok = True
     for u in sample:
         try:
-            req = urllib.request.Request(u, method="GET")
+            req = urllib.request.Request(u, method="GET", headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=15) as r:
                 code, body = r.status, r.read(65536).decode("utf-8", "replace")
         except (urllib.error.URLError, OSError) as e:
@@ -109,7 +117,8 @@ def main() -> int:
 
     payload = json.dumps({"host": HOST, "key": key, "urlList": urls}).encode()
     req = urllib.request.Request(ENDPOINT, data=payload,
-                                 headers={"Content-Type": "application/json; charset=utf-8"})
+                                 headers={"Content-Type": "application/json; charset=utf-8",
+                                          "User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             print(f"제출 완료: HTTP {r.status} · URL {len(urls)}건")
