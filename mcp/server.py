@@ -542,7 +542,7 @@ for _hp in ("/health", "/mcp/health"):
 # enabled for your account"를 띄우고 **HTTP는 200에 리다이렉트도 정상** — 상태코드
 # 감시로는 원리적으로 못 잡는다. 그러니 켤 때는 반드시 렌더 텍스트로 확인할 것:
 #   python3 /data/ops/probe_browser.py text https://creem.io/product/<prod_id>
-# 위 문자열이 사라지고 결제 폼이 보일 때 CREEM_CHECKOUT_LIVE=1 (기본 꺼짐 = fail-closed).
+# 위 문자열이 사라지고 결제 폼이 보일 때 CREEM_CHECKOUT_ENABLED=1 (기본 꺼짐 = fail-closed).
 _CHECKOUT_LINKS = {
     "trial7": "https://creem.io/product/prod_4Rg75B2ZKFL8Zs0N9Hqesu",
     "pro30": "https://creem.io/product/prod_4Mh1o1y9oty4l6bFPXlfAR",
@@ -552,7 +552,7 @@ _SOON = ('<span style="color:#a00">결제 개통 준비 중</span>')
 
 
 def _checkout_open() -> bool:
-    return os.environ.get("CREEM_CHECKOUT_LIVE", "") == "1"
+    return os.environ.get("CREEM_CHECKOUT_ENABLED", "") == "1"
 
 
 def _buy(slot: str) -> str:
@@ -614,7 +614,7 @@ Authorization: Bearer cc_live_...        # 또는 URL 뒤 ?key=cc_live_... (Chat
 
 def _pricing_html() -> str:
     """요금 페이지 — 구매 버튼은 요청 시 env로 결정. 개통되면 코드 수정 없이
-    .env에 CREEM_CHECKOUT_LIVE=1 + 서비스 재시작만으로 링크가 살아난다."""
+    .env에 CREEM_CHECKOUT_ENABLED=1 + 서비스 재시작만으로 링크가 살아난다."""
     open_ = _checkout_open()
     return (_PRICING_HTML
             .replace("<!--NOTICE-->", "" if open_ else _CLOSED_NOTICE)

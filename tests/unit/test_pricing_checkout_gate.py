@@ -18,7 +18,7 @@ server = pytest.importorskip("server", reason="mcp SDK 미설치 환경")
 
 
 def test_gate_off_hides_all_purchase_links(monkeypatch):
-    monkeypatch.delenv("CREEM_CHECKOUT_LIVE", raising=False)
+    monkeypatch.delenv("CREEM_CHECKOUT_ENABLED", raising=False)
     html = server._pricing_html()
     assert "creem.io/product/" not in html
     assert "결제 개통 준비 중" in html
@@ -28,7 +28,7 @@ def test_gate_off_hides_all_purchase_links(monkeypatch):
 
 
 def test_gate_on_restores_three_links(monkeypatch):
-    monkeypatch.setenv("CREEM_CHECKOUT_LIVE", "1")
+    monkeypatch.setenv("CREEM_CHECKOUT_ENABLED", "1")
     html = server._pricing_html()
     for url in server._CHECKOUT_LINKS.values():
         assert url in html
@@ -37,7 +37,7 @@ def test_gate_on_restores_three_links(monkeypatch):
 
 def test_no_unreplaced_placeholders(monkeypatch):
     for val in ("", "1"):
-        monkeypatch.setenv("CREEM_CHECKOUT_LIVE", val)
+        monkeypatch.setenv("CREEM_CHECKOUT_ENABLED", val)
         html = server._pricing_html()
         assert "<!--BUY_" not in html
         assert "<!--NOTICE-->" not in html
