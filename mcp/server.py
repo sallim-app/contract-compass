@@ -536,6 +536,40 @@ for _hp in ("/health", "/mcp/health"):
     server.custom_route(_hp, methods=["GET"], include_in_schema=False)(_health)
 
 
+# ── 구매 버튼 게이트 (2026-08-11, T-2026W33-59) ──────────────────────────────
+# Creem 판매자 계정의 **라이브 결제 온보딩·본인검증이 끝나야** 체크아웃이 뜬다.
+# 미완이면 상품 링크가 렌더 계층에서만 "Payment Error / Live payments are not
+# enabled for your account"를 띄우고 **HTTP는 200에 리다이렉트도 정상** — 상태코드
+# 감시로는 원리적으로 못 잡는다. 그러니 켤 때는 반드시 렌더 텍스트로 확인할 것:
+#   python3 /data/ops/probe_browser.py text https://creem.io/product/<prod_id>
+# 위 문자열이 사라지고 결제 폼이 보일 때 CREEM_CHECKOUT_LIVE=1 (기본 꺼짐 = fail-closed).
+_CHECKOUT_LINKS = {
+    "trial7": "https://creem.io/product/prod_4Rg75B2ZKFL8Zs0N9Hqesu",
+    "pro30": "https://creem.io/product/prod_4Mh1o1y9oty4l6bFPXlfAR",
+    "pro90": "https://creem.io/product/prod_5R2Iw6vbWxlB62La22kcqt",
+}
+_SOON = ('<span style="color:#a00">결제 개통 준비 중</span>')
+
+
+def _checkout_open() -> bool:
+    return os.environ.get("CREEM_CHECKOUT_LIVE", "") == "1"
+
+
+def _buy(slot: str) -> str:
+    """구매 셀 꼬리표 — 개통 전에는 죽은 결제 링크 대신 준비 중 표기."""
+    if not _checkout_open():
+        return _SOON
+    return f'<a href="{_CHECKOUT_LINKS[slot]}">구매</a>'
+
+
+_CLOSED_NOTICE = """<p style="background:#fff6e5;border:1px solid #e0b070;padding:12px 14px;
+border-radius:8px"><b>결제 개통 준비 중입니다.</b> 카드 결제사(Creem) 계정 검증이 끝나지
+않아 구매 버튼을 열어두지 않았습니다. <b>무료 티어(IP당 50콜/일)로 도구 8종을 지금 그대로
+쓸 수 있고</b>, 유료 한도가 당장 필요하시면 <b>contract@sallim.app</b>으로 알려 주세요 —
+개통 즉시(또는 수동 발급으로) 키를 보내 드립니다.</p>"""
+
+# 템플릿 치환은 .format()이 아니라 replace를 쓴다 — 아래 pre 블록의 Cursor 설정 예시에
+# 중괄호가 들어 있어 format이 깨진다.
 _PRICING_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>계약나침반 MCP — 요금 안내</title>
@@ -543,21 +577,22 @@ _PRICING_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
 <h1>🧭 계약나침반 MCP 요금 안내</h1>
 <p>한국 공공계약 법령·판례 MCP 서버 — 모든 도구는 LLM 없이 검증 가능한 법적 근거만
 반환합니다. 무료로 전 도구를 쓸 수 있고, 유료 키는 <b>한도만</b> 올립니다(기능 차이 없음).</p>
+<!--NOTICE-->
 <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
 <tr><th>티어</th><th>일일 한도</th><th>기능</th><th>가격</th></tr>
 <tr><td>무료</td><td>IP당 50콜 (UTC 자정 리셋)</td><td>도구 8종 전부</td><td>0원</td></tr>
 <tr><td>체험 키</td><td>키당 2,000콜</td><td>동일</td>
-<td>7일 $1.00 (약 ₩1,400) — <a href="https://creem.io/product/prod_4Rg75B2ZKFL8Zs0N9Hqesu">구매</a></td></tr>
+<td>7일 $1.00 (약 ₩1,400) — <!--BUY_TRIAL7--></td></tr>
 <tr><td>PRO 키</td><td>키당 2,000콜</td><td>동일 + 우선 지원</td>
-<td>30일 $7.00 (약 ₩9,500) — <a href="https://creem.io/product/prod_4Mh1o1y9oty4l6bFPXlfAR">구매</a><br>
-90일 $16.90 (약 ₩23,300) — <a href="https://creem.io/product/prod_5R2Iw6vbWxlB62La22kcqt">구매</a></td></tr>
+<td>30일 $7.00 (약 ₩9,500) — <!--BUY_PRO30--><br>
+90일 $16.90 (약 ₩23,300) — <!--BUY_PRO90--></td></tr>
 </table>
-<p><b>카드결제(USD)</b> — <b>해외결제 가능한 카드</b>(Visa/Mastercard 등 국제 브랜드)면
-개인·법인·정부구매카드 구분 없이 결제됩니다. 결제 완료 화면에서 라이선스 키가 즉시
-표시되고(1회) 영수증(인보이스)은 이메일로 발행됩니다. 자동결제(구독) 없음 — 기간 만료 시
-무료 티어로 자연 복귀합니다. 결제가 거절되면 해외(온라인)결제 차단 여부를 카드사에 확인해
-주세요. 기관 구매·세금계산서 등 별도 서류가 필요하면 <b>contract@sallim.app</b>으로
-문의해 주세요.</p>
+<p><b>카드결제(USD)<!--PAY_SUFFIX--></b> — <b>해외결제 가능한 카드</b>(Visa/Mastercard 등
+국제 브랜드)면 개인·법인·정부구매카드 구분 없이 결제됩니다. 결제 완료 화면에서 라이선스
+키가 즉시 표시되고(1회) 영수증(인보이스)은 이메일로 발행됩니다. 자동결제(구독) 없음 —
+기간 만료 시 무료 티어로 자연 복귀합니다. 결제가 거절되면 해외(온라인)결제 차단 여부를
+카드사에 확인해 주세요. 기관 구매·세금계산서 등 별도 서류가 필요하면
+<b>contract@sallim.app</b>으로 문의해 주세요.</p>
 <h2>연결 방법</h2>
 <pre style="background:#f4f4f5;padding:12px;border-radius:8px;overflow-x:auto">
 # Claude Code
@@ -577,9 +612,21 @@ Authorization: Bearer cc_live_...        # 또는 URL 뒤 ?key=cc_live_... (Chat
 </body></html>"""
 
 
+def _pricing_html() -> str:
+    """요금 페이지 — 구매 버튼은 요청 시 env로 결정. 개통되면 코드 수정 없이
+    .env에 CREEM_CHECKOUT_LIVE=1 + 서비스 재시작만으로 링크가 살아난다."""
+    open_ = _checkout_open()
+    return (_PRICING_HTML
+            .replace("<!--NOTICE-->", "" if open_ else _CLOSED_NOTICE)
+            .replace("<!--BUY_TRIAL7-->", _buy("trial7"))
+            .replace("<!--BUY_PRO30-->", _buy("pro30"))
+            .replace("<!--BUY_PRO90-->", _buy("pro90"))
+            .replace("<!--PAY_SUFFIX-->", "" if open_ else " · 개통 후 기준"))
+
+
 async def _pricing(request):  # noqa: ANN001
     from starlette.responses import HTMLResponse
-    return HTMLResponse(_PRICING_HTML)
+    return HTMLResponse(_pricing_html())
 
 
 for _pp in ("/pricing", "/mcp/pricing"):
