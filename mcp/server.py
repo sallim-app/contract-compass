@@ -546,13 +546,16 @@ _PRICING_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
 <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
 <tr><th>티어</th><th>일일 한도</th><th>기능</th><th>가격</th></tr>
 <tr><td>무료</td><td>IP당 50콜 (UTC 자정 리셋)</td><td>도구 8종 전부</td><td>0원</td></tr>
-<tr><td>체험 키</td><td>키당 2,000콜</td><td>동일</td><td>7일 1,000원</td></tr>
-<tr><td>PRO 키</td><td>키당 2,000콜</td><td>동일 + 우선 지원</td><td>30일 9,900원 · 90일 24,900원</td></tr>
+<tr><td>체험 키</td><td>키당 2,000콜</td><td>동일</td>
+<td>7일 $1.00 (약 ₩1,400) — <a href="https://creem.io/product/prod_4Rg75B2ZKFL8Zs0N9Hqesu">구매</a></td></tr>
+<tr><td>PRO 키</td><td>키당 2,000콜</td><td>동일 + 우선 지원</td>
+<td>30일 $7.00 (약 ₩9,500) — <a href="https://creem.io/product/prod_4Mh1o1y9oty4l6bFPXlfAR">구매</a><br>
+90일 $16.90 (약 ₩23,300) — <a href="https://creem.io/product/prod_5R2Iw6vbWxlB62La22kcqt">구매</a></td></tr>
 </table>
-<p><b>카드결제</b> — <b>해외결제 가능한 카드</b>(Visa/Mastercard 등 국제 브랜드)면
-개인·법인·정부구매카드 구분 없이 결제됩니다. 결제 즉시 라이선스 키가 이메일로 자동
-발송되고 영수증(인보이스)도 함께 발행됩니다. 자동결제(구독) 없음 — 기간 만료 시 무료
-티어로 자연 복귀합니다. 결제가 거절되면 해외(온라인)결제 차단 여부를 카드사에 확인해
+<p><b>카드결제(USD)</b> — <b>해외결제 가능한 카드</b>(Visa/Mastercard 등 국제 브랜드)면
+개인·법인·정부구매카드 구분 없이 결제됩니다. 결제 완료 화면에서 라이선스 키가 즉시
+표시되고(1회) 영수증(인보이스)은 이메일로 발행됩니다. 자동결제(구독) 없음 — 기간 만료 시
+무료 티어로 자연 복귀합니다. 결제가 거절되면 해외(온라인)결제 차단 여부를 카드사에 확인해
 주세요. 기관 구매·세금계산서 등 별도 서류가 필요하면 <b>contract@sallim.app</b>으로
 문의해 주세요.</p>
 <h2>연결 방법</h2>
@@ -764,19 +767,38 @@ async def _purchase_success(request):  # noqa: ANN001
     order = chk.get("order") or {}
     if not (order.get("id") == order_id and order.get("status") == "paid"):
         return _page("결제 확인 실패", "<p>결제 확인에 실패했습니다. 잠시 후 새로고침하거나 문의해 주세요.</p>", 404)
-    plain = _pending_claim(f"creem-{order_id}")
-    if plain:
+    def _key_page(k: str):
         return _page("결제 완료 — 라이선스 키",
                      f"<p>아래 키는 <b>이 화면에서 딱 한 번만</b> 표시됩니다. 지금 복사해 보관하세요.</p>"
-                     f"<p><code>{plain}</code></p>"
+                     f"<p><code>{k}</code></p>"
                      f"<p>사용법: MCP 클라이언트 헤더 <code>Authorization: Bearer &lt;키&gt;</code>. "
                      f"자세한 안내는 <a href='{PRICING_URL}'>요금 페이지</a> 참조.</p>")
+
+    plain = _pending_claim(f"creem-{order_id}")
+    if plain:
+        return _key_page(plain)
     import keystore
     rec = keystore.find_by_order(f"creem-{order_id}")
     if rec:
         return _page("이미 발급된 주문",
                      f"<p>이 주문의 키(접두 <code>{rec.get('key_prefix', '')}</code>)는 이미 표시됐습니다. "
                      f"분실하셨으면 주문번호와 함께 문의해 주세요.</p>")
+    # 웹훅 미도달 폴백(2026-08-10 라이브 컷오버): 라이브 모드 웹훅 미등록·whsec 불일치로
+    # checkout.completed를 놓쳐도 위에서 Creem API로 paid를 직접 확인했으므로 여기서 발급한다.
+    # keystore.issue가 order_id 멱등이라 웹훅이 뒤늦게 도착해도 중복 발급은 없다.
+    product = chk.get("product") or (order.get("product") if isinstance(order, dict) else None) or {}
+    product_id = product.get("id") if isinstance(product, dict) else str(product or "")
+    plan = _creem_plans().get(str(product_id), {})
+    if plan:
+        customer = chk.get("customer") or {}
+        email = customer.get("email", "") if isinstance(customer, dict) else ""
+        plain, rec = keystore.issue(
+            name=plan.get("label", f"Creem {product_id}"),
+            days=int(plan.get("days", 30)), daily=int(plan.get("daily", 2000)),
+            channel="creem", amount_krw=int(plan.get("amount_krw", 0)),
+            contact=email, order_id=f"creem-{order_id}", source="self_issued")
+        if plain:
+            return _key_page(plain)
     return _page("처리 중", "<p>결제 확인은 됐지만 키 발급이 아직입니다. 몇 초 후 새로고침해 주세요.</p>", 202)
 
 
