@@ -89,11 +89,16 @@ CASES = [
      "decide_contract_method",   # 20,000,001→"2,000만원" 반올림) 수리 회귀 — 2026-07-30
      {"contract_type": "service", "estimated_price": 20000001,
       "org_type": "local", "project_name": "회귀검사"},
+     # 검사 범위는 룰 계층(후보·설명·법령 키)만 — R25(2026-08-12)로 조문 본문(articles)이
+     # 배달되면서 지방계약법 시행령 제25조 '원문 자체'가 국가령을 인용하는 게 걸렸는데,
+     # 그건 혼입이 아니라 원문 충실이다(원문 인용을 지우는 쪽이 오히려 왜곡).
      lambda d: (lambda t: "국가계약법" not in t and "국가를 당사자" not in t
                 and "2,000만원" not in t
                 and any((c.get("rule_id") or "").startswith("LOCAL")
                         for c in d.get("candidates", [])))(
-                    json.dumps(d, ensure_ascii=False))),
+                    json.dumps({**d, "laws_applied": [
+                        {"key": l.get("key"), "law_name": l.get("law_name")}
+                        for l in d.get("laws_applied", [])]}, ensure_ascii=False))),
     ("R9-판례본문미제공-가시화",   # 검색엔 뜨나 본문 미제공 판례가 빈 필드로 침묵하던
      "get_case", {"kind": "prec", "case_id": "417684"},   # 결함(배터리 제보) 수리 회귀
      lambda d: d.get("error") == "case_body_unavailable" and "hint" in d),
