@@ -14,7 +14,7 @@ exit 0=전부 PASS / 1=회귀 존재 / 2=수집 실패(MCP 미도달)
     python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp
 
 주의: 공개 엔드포인트는 무료 IP당 50콜/일 한도가 걸리고 이 스위트가 케이스당 1콜씩
-쓰므로(현재 22콜) 하루 2회가 한계다. 한도를 넘기면 도구가 구조화 오류를 반환해 FAIL이
+쓰므로(현재 25콜) 하루 2회가 한계다. 한도를 넘기면 도구가 구조화 오류를 반환해 FAIL이
 아니라 **수집 실패로 보이지 않는 FAIL**이 되니, 판정 전 출력의 오류 메시지를 확인하라.
 사람이 읽는 문항지는 저장소 루트 `evaluation.xml`이다.
 """
@@ -176,6 +176,31 @@ CASES = [
      {"query": "공유재산법 시행령 제64조", "top_k": 3},
      lambda d: any("삭제" in (h.get("note") or "")
                    for h in d.get("hits", []) if "제64조" in (h.get("law_ref") or ""))),
+    ("R23-국가-2천만초과-무조건소액수의금지",  # 국가·공기업 2천만 초과~1억을 가격만 보고
+     "decide_contract_method",   # 소액수의로 판정하던 T-2026W33-58 게이트 — 시행령
+     {"contract_type": "product", "estimated_price": 50000000,   # 제26조①5호가목은 2천만
+      "org_type": "national", "project_name": "회귀검사"},        # 이하만 무조건, 초과는
+     lambda d: (lambda cs: bool(cs)                              # 상대방 요건부다
+                and "경쟁" in (cs[0].get("method") or "")
+                and all(c.get("rule_id") not in ("PRD_005", "SVC_002") for c in cs)
+                and any("요건" in (c.get("notes") or "") for c in cs))(
+                    d.get("candidates", []))),
+    ("R24-국가-소기업요건-수의승격",  # 요건 플래그(is_small_enterprise, 가목3) 충족 시
+     "decide_contract_method",     # 요건부 소액수의가 1순위로 — 게이트만 넣고 요건별
+     {"contract_type": "product", "estimated_price": 80000000,   # 룰을 안 넣으면 이 구간
+      "org_type": "national", "is_small_enterprise": True,       # 후보가 0건이 된다
+      "project_name": "회귀검사"},
+     lambda d: (lambda cs: bool(cs)
+                and cs[0].get("rule_id") == "PRD_NEGO_SMALLBIZ"
+                and "소액수의" in (cs[0].get("method") or ""))(
+                    d.get("candidates", []))),
+    ("R25-조문본문-배달",          # law_pack이 notes를, server.py가 articles를 버려
+     "decide_contract_method",    # 경고가 존재해도 배달되지 않던 결함 — 시행령 제26조
+     {"contract_type": "service", "estimated_price": 50000000,   # 본문(가목3 '소상공인')이
+      "org_type": "national", "project_name": "회귀검사"},        # laws_applied에 실려야
+     lambda d: any("소상공인" in (a.get("body") or "")            # 에이전트가 자력 검증
+                   for l in d.get("laws_applied", [])            # 가능하다
+                   for a in (l.get("articles") or []))),
 ]
 
 

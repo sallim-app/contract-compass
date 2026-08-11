@@ -288,6 +288,7 @@ async def step1(
             bidder_options=bidder_opts,
             bidder_selection=bidder_sel,
             legal_basis=rule_legal_basis,
+            notes=rule.get("notes") if rule else None,
         ))
 
     # 결정론적 보정: LLM이 최상위 매칭 규칙을 누락하면 강제 주입
@@ -320,6 +321,7 @@ async def step1(
                 summary=top_rule.get("name", ""),
                 key_params=injected_key_params,
                 clarifying_questions=[],
+                notes=top_rule.get("notes"),
             ))
 
     # 결정론적 재정렬: 규칙 엔진의 priority(낮을수록 더 구체적) 순서를 강제
@@ -368,6 +370,7 @@ async def step1(
                         bidder_options=(top_rule.get("result", {}) or {}).get("bidder_options", []) or [],
                         bidder_selection=(top_rule.get("result", {}) or {}).get("bidder_selection"),
                         legal_basis=top_rule.get("legal_basis", []) or [],
+                        notes=top_rule.get("notes"),
                     )]
                     break
         if preferred:

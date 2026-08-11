@@ -31,6 +31,10 @@ class Candidate(BaseModel):
     bidder_selection: str | None = None
     # F4-1 e2e: 매칭된 룰의 legal_basis 노출 (대기업 참여 제한·SW진흥법 등 검증용)
     legal_basis: list[str] = []
+    # 2026-08-12 R23(T-2026W33-58): 룰 notes(요건 경고 — "2천만 초과~1억은 상대방 요건
+    # 충족 시만 수의")가 룰 파일에만 있고 응답에 실리지 않아 정적 SEO 페이지만 경고를
+    # 노출하는 계층 간 자기모순이 있었다. 후보마다 notes를 배달한다.
+    notes: str | None = None
 
 
 class NextStepQuestion(BaseModel):

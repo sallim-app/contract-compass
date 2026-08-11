@@ -339,6 +339,9 @@ def build_decision_pack(
             "conditions": rule.get("conditions", {}),
             "legal_basis_keys": law_keys,
             "result": rule.get("result", {}),
+            # 2026-08-12 R23(T-2026W33-58): 룰 notes(요건 경고)가 decision_pack에 실리지
+            # 않아 LLM·에이전트가 "2천만 초과~1억 요건부" 경고를 받지 못했다 — 배달한다.
+            "notes": rule.get("notes"),
         },
         "human_explanation": human_explanation,
         "laws_applied": laws_applied,

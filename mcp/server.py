@@ -227,6 +227,7 @@ def decide_contract_method(
     is_disabled_enterprise: bool = False,
     is_social_enterprise: bool = False,
     is_youth_startup: bool = False,
+    is_small_enterprise: bool = False,
     project_name: str = "MCP 조회",
 ) -> dict:
     """계약방법 결정론 판정 — 룰엔진이 적용 가능한 계약방법 후보와 법령 근거를 반환.
@@ -247,8 +248,15 @@ def decide_contract_method(
         is_disabled_enterprise: 장애인기업 여부 (위와 같은 목)
         is_social_enterprise: 사회적기업·사회적협동조합·자활기업·마을기업 여부 (위와 같은 목).
             이 유형은 행정안전부 고시 취약계층 고용비율 충족이 추가 요건이다.
-        is_youth_startup: 청년창업기업 여부 — 지자체 물품·용역 2천만원 초과 5천만원
-            이하 수의계약(같은 조 제5호 다목, 중소기업창업 지원법 제2조제11호)
+        is_youth_startup: 청년창업기업 여부 — 물품·용역 2천만원 초과 5천만원 이하
+            수의계약(지방 제5호 다목 / 국가 시행령 제26조①5호가목7, 중소기업창업
+            지원법 제2조제11호)
+        is_small_enterprise: 상대방이 소기업·소상공인인지 여부 — 2천만원 초과 1억원
+            이하 수의계약(국가 시행령 제26조①5호가목3 / 지방 시행령 제25조①5호라목)
+            판정에 필요. **주의: 국가·공기업 2천만원 초과~1억원 이하는 무조건
+            소액수의가 아니다** — 소기업·소상공인/특수 지식·기술(academic)/여성·
+            장애인·사회적기업/청년창업(5천만 이하) 요건 충족 시에만 수의 가능하므로,
+            해당하면 플래그를 세워라. 미충족이면 경쟁입찰이 원칙이다.
     """
     body: dict[str, Any] = {
         "contract_type": contract_type,
@@ -259,6 +267,7 @@ def decide_contract_method(
         "is_disabled_enterprise": is_disabled_enterprise,
         "is_social_enterprise": is_social_enterprise,
         "is_youth_startup": is_youth_startup,
+        "small_enterprise_restriction": is_small_enterprise,
         "project_name": project_name,
         # 에이전트 클라이언트는 자체 LLM으로 설명을 합성 — 백엔드 LLM 보조설명 생략
         # (판정 결과·법령 근거는 동일, OpenAI 일일 예산 0 소모. 2026-07-30)
@@ -273,7 +282,19 @@ def decide_contract_method(
     d = _post("/filter/step1", body)
     if _is_error(d):
         return d
-    # 에이전트가 소화하기 좋은 축약 형태로 정리
+    # 에이전트가 소화하기 좋은 축약 형태로 정리.
+    # 2026-08-12 R23·R25(T-2026W33-58): 종전엔 notes(요건 경고)와 조문 본문(articles)을
+    # 여기서 버려, 룰 파일에 정확히 적힌 "2천만 초과~1억은 상대방 요건 충족 시만 수의"
+    # 경고가 에이전트에 배달되지 않았고 조문으로 자력 정정도 불가능했다 — 배달한다.
+    # 조문 본문은 6,000자 캡(시행령 제26조 전문 5,729자 수록) + 절단 공시(거짓말 금지).
+    def _cap_article(a: dict) -> dict:
+        body = a.get("body") or ""
+        out = {"title": a.get("title"), "body": body}
+        if len(body) > 6000:
+            out["body"] = body[:6000] + "…"
+            out["truncated"] = f"총 {len(body)}자 중 앞 6,000자만 표시"
+        return out
+
     return {
         "candidates": [
             {
@@ -283,13 +304,15 @@ def decide_contract_method(
                 "summary": c.get("summary"),
                 "key_params": c.get("key_params"),
                 "legal_basis": c.get("legal_basis"),
+                "notes": c.get("notes"),
             }
             for c in d.get("candidates", [])
         ],
         "practice_alternatives": d.get("practice_alternatives", []),
         "explanation": (d.get("decision_pack") or {}).get("human_explanation", ""),
         "laws_applied": [
-            {"key": l.get("key"), "law_name": l.get("law_name")}
+            {"key": l.get("key"), "law_name": l.get("law_name"),
+             "articles": [_cap_article(a) for a in (l.get("articles") or [])]}
             for l in (d.get("decision_pack") or {}).get("laws_applied", [])
         ],
         "follow_up_questions": [
