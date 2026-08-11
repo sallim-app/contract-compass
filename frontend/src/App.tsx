@@ -15,6 +15,7 @@ import GlossaryPage from './pages/GlossaryPage'
 import HomeDashboard from './pages/HomeDashboard'
 import { SourceDrawerProvider } from './components/SourceDrawer'
 import { submitFeedback } from './api/client'
+import { track } from './lib/track'
 import type { Step1Input } from './types'
 
 const APP_SESSION_ID = `app-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -488,6 +489,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'auto' })
   }, [currentStep])
 
+  // 전환 ④: 결정 요약(step4) 도달 = 위저드 완주. 단계 전환 경로가 여럿(Step3 버튼·
+  // 스테퍼 점프)이라 각 호출지가 아니라 여기서 한 번만 잡는다. 뒤로 갔다 다시 오면
+  // 재발화하지만 umami 이벤트는 세션 단위로 집계되므로 판정에 해롭지 않다.
+  useEffect(() => {
+    if (currentStep === 4) track('wizard-complete')
+  }, [currentStep])
+
   const handleHistorySelect = (entry: HistoryEntry) => {
     reset()
     setStep1Input(entry.input)
@@ -580,8 +588,10 @@ export default function App() {
       {showAsk && <AskPage onClose={() => setShowAsk(false)} />}
       {showGlossary && <GlossaryPage onClose={() => setShowGlossary(false)} />}
       {showHome && <HomeDashboard
-        onDecision={() => { setShowHome(false); window.location.hash = '#decide' }}
-        onAsk={() => { setShowAsk(true) }}
+        // 전환 ①: 홈 카드에서 위저드/Q&A로 들어간 순간. 방문(pageview)과 '쓰기 시작'을
+        // 가르는 지점이라 유입 품질 판정의 분모가 된다.
+        onDecision={() => { track('wizard-start'); setShowHome(false); window.location.hash = '#decide' }}
+        onAsk={() => { track('ask-open', { from: 'home' }); setShowAsk(true) }}
         onGlossary={() => { setShowGlossary(true) }} />}
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
 
