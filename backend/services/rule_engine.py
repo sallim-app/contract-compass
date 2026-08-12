@@ -67,9 +67,63 @@ class RuleEngine:
                 continue
             if self._check_conditions(rule.get("conditions", {}), params):
                 matched.append(rule)
-        # priority 값이 낮을수록 더 구체적인 규칙 (높은 우선순위)
-        matched.sort(key=lambda r: r.get("priority", 999))
-        return matched
+        return self._order_matched(matched, params.get("estimated_price", 0))
+
+    # 경계에서 새로 열리는 룰을 '이하' 룰 바로 뒤로 보낼 때 쓰는 증분 —
+    # 정수 priority 사이에 끼우기만 하면 되므로 값 자체엔 의미가 없다.
+    _BOUNDARY_EPSILON = 0.5
+
+    def _order_matched(self, matched: list[dict], price: int) -> list[dict]:
+        """priority 순 정렬 — 단, `boundary_inclusive_rank` 룰의 상한 경계에서 순위 역전을 막는다.
+
+        법문에서 수의계약 상한은 '…이하'라 **경계 정확값도 그 목의 구간**이다
+        (국가계약법 시행령 제26조①5호가목3)~5) 2천만원 초과 **1억원 이하**,
+        가목7) 5천만원 이하). 그런데 경쟁 룰은 같은 경계에서 '이상'(_gte)으로 열리므로
+        **정확히 그 한 점에서만** 두 룰이 겹치고, 경쟁 룰의 priority가 더 앞서면
+        1순위가 뒤집힌다 — 소기업·소상공인 요건을 선언한 국가 물품 건이
+        99,999,999원엔 소액수의(PRD_NEGO_SMALLBIZ), 100,000,000원엔 일반경쟁
+        (PRD_003B)이 되는 1원짜리 불연속(2026-08-13 T-2026W33-99 본선 재현).
+
+        경계 직전에는 존재하지도 않던(그 점에서 비로소 열리는) 룰이, 그 점까지
+        이어져 온 '이하' 룰을 1순위에서 밀어내지 못하게 한다. 즉 **경계 정확값의
+        순위 = 경계 직전의 순위 + 새로 열린 룰들(뒤에 이어붙임)**. 구간을 걸쳐
+        있는(경계에서 열리지 않는) 룰은 손대지 않으므로, 5천만원처럼 진짜 구간이
+        시작하는 경계에서 SVC_IT_002(정보화사업 5천만~2.3억) 같은 룰이 밀리는
+        부작용은 없다.
+
+        **옵트인인 이유**: 상한이 '이하'인 룰은 공사 소액수의(CST_005·CST_ELEC_003
+        등)에도 있지만, 그쪽은 금액만으로 매칭되는 재량 사유(가목1)라 경계
+        정확값에서 경쟁을 1순위로 두는 규약이 이미 검토·고정돼 있다
+        (tests/scenarios_public.json '전기공사 1.6억 경계'). 반면 가목3)~5)7)은
+        사용자가 **상대방 요건을 선언했을 때만** 매칭되므로, 요건을 선언한 건에
+        요건부 수의를 1순위로 주는 것이 경계 직전과 일관된다. 그래서 전역 규칙이
+        아니라 룰이 `boundary_inclusive_rank: true`로 선언한 경우에만 적용한다.
+
+        보정된 룰에는 `_effective_priority`를 붙인 얕은 사본을 반환한다(원본 룰
+        딕셔너리는 self._data 공유물이라 변형 금지). 하위에서 priority로 재정렬하는
+        소비자(`api/v1/filter.py`)는 이 키를 우선 읽어야 순서가 유지된다.
+        """
+        # 상한이 경계 정확값인 옵트인 룰 — 없으면 경계가 아니므로 아무것도 안 바뀐다
+        closing = [r for r in matched
+                   if r.get("boundary_inclusive_rank")
+                   and r.get("conditions", {}).get("estimated_price_lte") == price]
+        if not closing:
+            return sorted(matched, key=lambda r: r.get("priority", 999))
+
+        floor = min(r.get("priority", 999) for r in closing)
+        adjusted = []
+        for rule in matched:
+            cond = rule.get("conditions", {})
+            prio = rule.get("priority", 999)
+            opens_here = (cond.get("estimated_price_gte") == price
+                          and cond.get("estimated_price_lte") != price)
+            if opens_here and prio <= floor:
+                rule = {**rule, "_effective_priority": floor + self._BOUNDARY_EPSILON}
+            adjusted.append(rule)
+        # 2차 키(원 priority)로 보정된 룰들끼리의 상대 순서를 유지
+        adjusted.sort(key=lambda r: (r.get("_effective_priority", r.get("priority", 999)),
+                                     r.get("priority", 999)))
+        return adjusted
 
     def _check_conditions(self, conditions: dict, params: dict) -> bool:
         price = params.get("estimated_price", 0)

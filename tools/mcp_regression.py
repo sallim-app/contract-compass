@@ -206,6 +206,17 @@ CASES = [
      lambda d: any("소상공인" in (a.get("body") or "")            # 에이전트가 자력 검증
                    for l in d.get("laws_applied", [])            # 가능하다
                    for a in (l.get("articles") or []))),
+    ("R26-1억정확값-요건부수의-1순위",  # 정확히 1억원에서만 1순위가 뒤집히던 결함 —
+     "decide_contract_method",       # 가목3 원문이 '2천만원 초과 1억원 이하'라 1억
+     {"contract_type": "product", "estimated_price": 100000000,   # 정확값도 요건 구간인데
+      "org_type": "national", "is_small_enterprise": True,        # PRD_003B(1억 이상)가
+      "project_name": "회귀검사"},                                  # priority로 1순위를 뺏어
+     lambda d: (lambda cs: bool(cs)                               # 99,999,999원=소액수의,
+                and cs[0].get("rule_id") == "PRD_NEGO_SMALLBIZ"   # 100,000,000원=일반경쟁의
+                and "소액수의" in (cs[0].get("method") or "")       # 1원짜리 불연속이었다
+                # 일반경쟁은 사라지지 않고 2순위 대안으로 남아야 한다
+                and any(c.get("rule_id") == "PRD_003B" for c in cs))(
+                    d.get("candidates", []))),
 ]
 
 

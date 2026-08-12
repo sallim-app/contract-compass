@@ -659,6 +659,95 @@
       "expect_top3": [
         "SVC_COMP_UNDER_100M"
       ]
+    },
+    {
+      "desc": "국가 물품 99,999,999 소기업 — 1억 경계 직전 앵커(T-2026W33-99)",
+      "org_type": "national",
+      "params": {
+        "contract_type": "product",
+        "estimated_price": 99999999,
+        "small_enterprise_restriction": true
+      },
+      "expect_rule_id": "PRD_NEGO_SMALLBIZ",
+      "expect_method": "소액수의계약",
+      "expect_top3": [
+        "PRD_NEGO_SMALLBIZ",
+        "PRD_COMP_UNDER_100M"
+      ]
+    },
+    {
+      "desc": "국가 물품 1억 정확값 소기업 — 가목3 '1억원 이하'라 경계 포함, 1원 차이 불연속 금지(T-2026W33-99)",
+      "org_type": "national",
+      "params": {
+        "contract_type": "product",
+        "estimated_price": 100000000,
+        "small_enterprise_restriction": true
+      },
+      "expect_rule_id": "PRD_NEGO_SMALLBIZ",
+      "expect_method": "소액수의계약",
+      "expect_top3": [
+        "PRD_NEGO_SMALLBIZ",
+        "PRD_003B"
+      ]
+    },
+    {
+      "desc": "국가 물품 1억 정확값 무플래그 — 요건 미선언이면 종전대로 일반경쟁(보정이 경계 밖으로 새지 않음)",
+      "org_type": "national",
+      "params": {
+        "contract_type": "product",
+        "estimated_price": 100000000
+      },
+      "expect_rule_id": "PRD_003B",
+      "expect_method": "일반경쟁입찰",
+      "expect_top3": [
+        "PRD_003B"
+      ]
+    },
+    {
+      "desc": "국가 용역 1억 정확값 소기업 — 물품과 동일 규약(가목3)",
+      "org_type": "national",
+      "params": {
+        "contract_type": "service",
+        "estimated_price": 100000000,
+        "small_enterprise_restriction": true
+      },
+      "expect_rule_id": "SVC_NEGO_SMALLBIZ",
+      "expect_method": "소액수의계약",
+      "expect_top3": [
+        "SVC_NEGO_SMALLBIZ",
+        "SVC_001",
+        "SVC_007"
+      ]
+    },
+    {
+      "desc": "국가 용역 5천만 정확값 청년창업 — 가목7 '5천만원 이하' 경계 포함",
+      "org_type": "national",
+      "params": {
+        "contract_type": "service",
+        "estimated_price": 50000000,
+        "is_youth_startup": true
+      },
+      "expect_rule_id": "SVC_NEGO_YOUTH",
+      "expect_method": "소액수의계약",
+      "expect_top3": [
+        "SVC_NEGO_YOUTH",
+        "SVC_COMP_UNDER_100M"
+      ]
+    },
+    {
+      "desc": "공기업 물품 1억 정확값 여성·장애인·사회적기업 — 가목5 경계 포함",
+      "org_type": "public_corp",
+      "params": {
+        "contract_type": "product",
+        "estimated_price": 100000000,
+        "is_preferential_enterprise": true
+      },
+      "expect_rule_id": "PRD_NEGO_SOCIAL",
+      "expect_method": "소액수의계약",
+      "expect_top3": [
+        "PRD_NEGO_SOCIAL",
+        "PRD_003B"
+      ]
     }
   ]
 }

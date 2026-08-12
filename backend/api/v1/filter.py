@@ -326,7 +326,11 @@ async def step1(
 
     # 결정론적 재정렬: 규칙 엔진의 priority(낮을수록 더 구체적) 순서를 강제
     # LLM이 임의로 순서를 바꾸지 못하도록 함
-    rule_priority = {r["rule_id"]: r.get("priority", 999) for r in matched_rules}
+    # `_effective_priority`는 룰엔진이 '이하' 경계 정확값에서 붙이는 보정치 —
+    # 이 키를 무시하고 raw priority로 재정렬하면 엔진의 경계 보정이 여기서 되돌아간다
+    # (2026-08-13 T-2026W33-99: 1억원 정확값 1순위 뒤집힘의 두 번째 코드 위치).
+    rule_priority = {r["rule_id"]: r.get("_effective_priority", r.get("priority", 999))
+                     for r in matched_rules}
     candidates.sort(key=lambda c: rule_priority.get(c.rule_id, 999))
     # F31 (2026-06-10): candidates max 3개 — UI 노출은 1순위+2~3 보조만, INTL 같은 보조 룰이 4번째로 끼면 제외
     if len(candidates) > 3:
