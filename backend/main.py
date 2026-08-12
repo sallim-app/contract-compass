@@ -166,6 +166,18 @@ async def ready():
         warnings.extend(_cwarn)
     except Exception as e:
         warnings.append(f"코퍼스 신선도 판독 실패: {e}")
+    # 3) 배포된 프런트 산출물 신선도 — dist는 .gitignore인데 여기서 서빙하므로, 빌드를
+    #    잊으면 커밋한 프런트 변경이 라이브에 없다(2026-08-10 실사고: 허브 링크 4일 미반영
+    #    → 롱테일 113건 고아). 전부 warning — 이 판독으로 503을 내지 않는다.
+    try:
+        from backend.services.dist_status import scan_dist, evaluate_dist_freshness
+        _dinfo, _dwarn = evaluate_dist_freshness(
+            scan_dist(DIST_DIR, BASE_DIR / "frontend" / "public", BASE_DIR),
+            _dt.now().timestamp())
+        info.update(_dinfo)
+        warnings.extend(_dwarn)
+    except Exception as e:
+        warnings.append(f"dist 신선도 판독 실패: {e}")
     status_ = "degraded" if failures else ("warn" if warnings else "ok")
     body = {"status": status_, "failures": failures, "warnings": warnings, "info": info}
     if failures:
