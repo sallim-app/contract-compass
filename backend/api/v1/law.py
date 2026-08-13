@@ -124,6 +124,91 @@ def _deleted_note(doc: str) -> str | None:
     return None
 
 
+# ── 조문 미발견 응답 (T-2026W33-146) ────────────────────────────────────────
+# 기치② "못 봄 ≠ 없음": 이 코퍼스는 공공계약 특화라 민사집행법 같은 법령은 애초에
+# 담고 있지 않다. 그런데 "제229조 조문을 찾을 수 없습니다"처럼 답하면 에이전트는
+# **그런 조문이 없다**고 읽고 판례 참조조문을 틀렸다고 말하거나 자체 지식으로
+# 조용히 폴백한다(2026-08-14 Claude 탐침 실측). 코퍼스 밖 법령과 없는 조문을
+# 서로 다른 메시지로 갈라내고, 법령명을 지우지 않는다.
+@lru_cache(maxsize=1)
+def _corpus_law_names() -> tuple[str, ...]:
+    """코퍼스에 실재하는 법령명 목록 — 메타데이터 전수 1회 스캔 후 프로세스 캐시."""
+    try:
+        metas = _get_collection().get(include=["metadatas"]).get("metadatas") or []
+    except Exception:  # noqa: BLE001 — 목록 산출 실패가 404 응답 자체를 막지 않게
+        return ()
+    return tuple(sorted({(m.get("law_name") or "").strip() for m in metas if m.get("law_name")}))
+
+
+def _corpus_name_keys() -> set[str]:
+    """코퍼스 법령명의 비교용 키 집합(약칭·정식명 양쪽, 공백·중점 제거)."""
+    from backend.config import BASE_DIR
+    from backend.services.law_history import _cached_name_map, norm_name
+    name_map = _cached_name_map(str(BASE_DIR / "tools" / "laws"))
+    keys: set[str] = set()
+    for n in _corpus_law_names():
+        keys.add(norm_name(n))
+        keys.add(norm_name(name_map.get(norm_name(n), n)))
+    return keys
+
+
+def _law_in_corpus(target_law: str) -> bool:
+    """사용자가 부른 법령명이 코퍼스에 있는가 — 약칭·정식명·표기 흔들림 흡수."""
+    if not target_law:
+        return False
+    from backend.config import BASE_DIR
+    from backend.services.law_history import _cached_name_map, norm_name
+    name_map = _cached_name_map(str(BASE_DIR / "tools" / "laws"))
+    q = norm_name(target_law)
+    keys = _corpus_name_keys()
+    return q in keys or norm_name(name_map.get(q, target_law)) in keys
+
+
+def _article_not_found(ref: str, article: str, target_law: str,
+                       also_in: list[str] | None = None) -> HTTPException:
+    """조문 미발견 404 — 코퍼스 밖 법령(모름)과 없는 조문(부존재)을 분리해 알린다.
+
+    also_in: 그 조문번호를 가진 **다른** 법령들(있으면 재질의 단서로 실어 보낸다).
+    """
+    in_corpus = _law_in_corpus(target_law)
+    laws = list(_corpus_law_names())
+    if target_law and not in_corpus:
+        message = (f"'{ref}'을(를) 조회하지 못했습니다 — '{target_law}'은(는) 이 서버 코퍼스에 "
+                   f"없는 법령입니다(공공계약 특화 코퍼스, 법령 {len(laws)}건). "
+                   f"{article}이(가) 존재하지 않는다는 뜻이 아닙니다.")
+        hint = (f"**'{article}'이 없다고 말하지 마라** — 우리가 안 가지고 있을 뿐이다. "
+                f"'{target_law}'은 이 코퍼스 범위 밖임을 사용자에게 밝히고, 조문 원문이 필요하면 "
+                f"get_law_article_asof(코퍼스 밖 법령도 law.go.kr 연혁에서 직접 조회한다) 또는 "
+                f"law.go.kr을 안내하라. 판례 참조조문 교차확인 중이었다면 그 참조조문이 "
+                f"틀렸다고 판단하지 말 것.")
+    elif target_law:
+        message = (f"'{ref}'을(를) 조회하지 못했습니다 — '{target_law}'은(는) 코퍼스에 있으나 "
+                   f"{article}은(는) 없습니다.")
+        hint = (f"법령명은 맞으니 조문번호를 확인하라. search_law로 '{target_law}'의 관련 조문을 "
+                f"검색하거나, 개정으로 조문번호가 바뀌었을 수 있으니 get_law_article_asof로 "
+                f"당시 시점을 조회하라.")
+    else:
+        message = (f"'{ref}'에서 법령명을 식별하지 못했습니다 — {article}만으로는 어느 법령의 "
+                   f"조문인지 특정할 수 없습니다.")
+        hint = ("법령명을 붙여 다시 호출하라(예: '국가계약법 시행령 제26조'). "
+                "corpus_laws에 조회 가능한 법령명이 들어 있다.")
+    others = [n for n in (also_in or []) if n]
+    if others:
+        uniq = sorted(set(others))
+        message += f" (같은 조문번호를 가진 코퍼스 법령: {', '.join(uniq)})"
+    return HTTPException(404, {
+        "error": "article_not_found" if target_law else "law_not_specified",
+        "message": message,
+        "ref": ref,
+        "law_name": target_law,
+        "article": article,
+        "law_in_corpus": in_corpus,
+        "hint": hint,
+        "article_found_in_other_laws": sorted(set(others)),
+        "corpus_laws": laws,
+    })
+
+
 def _make_snippet(text: str, q: str, around: int = 80) -> str:
     idx = text.find(q)
     if idx < 0:
@@ -153,11 +238,13 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
     )
     docs = results.get("documents") or []
     metas = results.get("metadatas") or []
+    # 조문번호가 코퍼스 어디에도 없을 때 — 갈림길은 "그 번호가 아무 법령에나 있느냐"가
+    # 아니라 "사용자가 부른 법령을 우리가 갖고 있느냐"다(T-2026W33-146).
     if not docs:
-        raise HTTPException(404, f"{article} 조문을 찾을 수 없습니다")
+        raise _article_not_found(ref, article, target_law)
 
     if not target_law:
-        raise HTTPException(404, "법령명을 식별할 수 없습니다 (예: '시행령 제30조')")
+        raise _article_not_found(ref, article, "")
 
     # 1단계: law_name 정확 일치
     best = None
@@ -179,7 +266,8 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
                 break
 
     if best is None:
-        raise HTTPException(404, f"{ref!r}에 해당하는 조문을 찾을 수 없습니다 (검색된 법령: {[m.get('law_name') for m in metas]})")
+        raise _article_not_found(ref, article, target_law,
+                                 also_in=[m.get("law_name") or "" for m in metas])
 
     doc, meta = best
     # 긴 조문은 색인 시 parent가 2,000자에서 잘려 저장됨 — 자식 청크(항 단위)를

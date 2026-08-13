@@ -182,6 +182,11 @@ def _friendly_error(exc: Exception) -> dict:
             return {"error": "rate_limit_exceeded", "status": status,
                     "message": "요청 빈도 한도 초과",
                     "hint": f"{detail.get('retry_after', 60)}초 후 재시도하라. 병렬 호출 금지."}
+        # 백엔드가 이미 구조화 오류(error+hint)를 준 경우는 **그대로 중계**한다 —
+        # str()로 뭉개면 "못 봄 ≠ 없음"을 가르는 law_in_corpus·corpus_laws 같은
+        # 판단 근거가 사라진다(T-2026W33-146: article_not_found / law_not_specified).
+        if isinstance(detail, dict) and detail.get("error") and detail.get("hint"):
+            return {**detail, "status": status}
         return {"error": "backend_error", "status": status,
                 "message": str(detail or exc)[:300],
                 "hint": "요청 인자를 바꿔도 같은 오류면 사용자에게 오류를 알려라."}
