@@ -24,6 +24,16 @@
       data-website-id="7c6aa9f8-3bee-4a18-ae4d-0c6467c355fc"
       data-domains="contract.sallim.app,contract.naru.build"
     ></script>
+    <!-- 표준 피드백 위젯(의견+화면캡처 → studio-ops /feedback, T-2026W32-89).
+         offset 80 = App.tsx의 기존 FAB(fixed bottom-6 = 24px, 높이 약 42px) 위로 배치.
+         주의: 수신측 CORS 허용목록에 contract.sallim.app만 있다 — contract.naru.build로
+         들어온 방문자는 전송이 CORS로 조용히 죽는다(도메인 이원화 잔여분 정리 전까지). -->
+    <script
+      defer
+      src="https://api.naru.build/ops/feedback-widget.js"
+      data-service="contract-compass"
+      data-offset="80"
+    ></script>
   </head>
   <body>
     <div id="root"></div>
