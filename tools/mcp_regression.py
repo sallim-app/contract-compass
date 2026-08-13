@@ -14,7 +14,7 @@ exit 0=전부 PASS / 1=회귀 존재 / 2=수집 실패(MCP 미도달)
     python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp
 
 주의: 공개 엔드포인트는 무료 IP당 50콜/일 한도가 걸리고 이 스위트가 케이스당 1콜씩
-쓰므로(현재 25콜) 하루 2회가 한계다. 한도를 넘기면 도구가 구조화 오류를 반환해 FAIL이
+쓰므로(현재 28콜) 하루 1회가 한계다. 한도를 넘기면 도구가 구조화 오류를 반환해 FAIL이
 아니라 **수집 실패로 보이지 않는 FAIL**이 되니, 판정 전 출력의 오류 메시지를 확인하라.
 사람이 읽는 문항지는 저장소 루트 `evaluation.xml`이다.
 """
@@ -217,6 +217,19 @@ CASES = [
                 # 일반경쟁은 사라지지 않고 2순위 대안으로 남아야 한다
                 and any(c.get("rule_id") == "PRD_003B" for c in cs))(
                     d.get("candidates", []))),
+    ("R27-코퍼스밖법령-못봄≠없음",   # 이 코퍼스는 공공계약 특화라 민사집행법이 없다.
+     "get_law_article",             # 그런데 "제229조 조문을 찾을 수 없습니다"로 답해
+     {"ref": "민사집행법 제229조"},   # 에이전트가 '그런 조문 없음'으로 읽고 판례 참조조문을
+     lambda d: (d.get("error") == "article_not_found"       # 틀렸다 하거나 자체 지식으로
+                and d.get("law_in_corpus") is False         # 폴백하던 결함(T-2026W33-146).
+                and "민사집행법" in (d.get("message") or "")   # 법령명이 지워지지 않고
+                and len(d.get("corpus_laws") or []) > 0)),  # 조회 가능 법령이 실려야 한다
+    ("R28-없는조문-법령은있음",      # R27의 짝 — 같은 404라도 이건 진짜 부존재다.
+     "get_law_article",            # 두 상황이 같은 문장을 내면 구별이 불가능해진다.
+     {"ref": "국가계약법 시행령 제9999조"},
+     lambda d: (d.get("error") == "article_not_found"
+                and d.get("law_in_corpus") is True
+                and "국가계약법 시행령" in (d.get("message") or ""))),
 ]
 
 
