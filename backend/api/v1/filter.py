@@ -46,23 +46,26 @@ def _cache_set(key: str, val: dict) -> None:
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 
-def _rule_method(rule: dict, price: int = 0) -> str:
-    """규칙 result에서 금액에 맞는 계약방법 문자열 추출. method_by_amount 지원."""
-    result = rule.get("result", {})
-    if "method" in result:
-        return result["method"]
-    method_map = result.get("method_by_amount", {})
-    if method_map:
-        tiers = sorted(
-            ((int(k.split("_", 1)[1]), v) for k, v in method_map.items()),
-            reverse=True,
-        )
-        for threshold, method in tiers:
-            if price >= threshold:
-                return method
-        return tiers[-1][1] if tiers else "미확정"
-    return "미확정"
+# 진실원은 rule_engine — 룰만 필요한 경량 소비자(정적 페이지 생성기·CI 테스트)가
+# 이 무거운 모듈을 import하지 않고 같은 함수를 쓰게 하려고 옮겼다(2026-08-06).
+# 호출부는 그대로 `_rule_method`를 쓴다.
+from backend.services.rule_engine import rule_method as _rule_method  # noqa: E402
 
+
+# 2026-08-14 T-2026W33-148: `fire_safety`·`professional_generic` 룰은 '그 밖의 공사'·
+# 전문공사 14종의 **금액 기준 공용 룰**을 겸한다. 정확 일치 룰이 1순위로 오도록 고쳤지만
+# (rule_engine._sort_key) 공용 룰은 후보에 남으므로, 남은 것이 무엇인지 밝혀야 한다 —
+# 문화재수리공사 질의에 "소방공사 일반경쟁"이 이름째로 놓여 있으면 소방 전용 요건으로 읽힌다.
+_SENTINEL_NOTE = ("※ 이 룰은 해당 전문분야 전용 규정이 아니라 '그 밖의 공사(법령공사)'·"
+                  "전문공사의 **금액 기준 공용 룰**이다 — 룰 이름의 업종(예: 소방공사)을 "
+                  "면허·업종 요건으로 읽지 말고, 금액 구간·낙찰하한율만 참고하라. "
+                  "업종 요건은 해당 공사의 근거 법령(문화유산수리 등 진흥법, 전기공사업법 등)을 확인할 것.")
+
+
+def _with_sentinel_note(rule: dict | None, notes: str | None) -> str | None:
+    if not rule or rule.get("_specialty_match") != "sentinel":
+        return notes
+    return f"{notes}\n{_SENTINEL_NOTE}" if notes else _SENTINEL_NOTE
 
 def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
@@ -300,6 +303,7 @@ async def step1(
             bidder_options=bidder_opts,
             bidder_selection=bidder_sel,
             legal_basis=rule_legal_basis,
+            notes=_with_sentinel_note(rule, rule.get("notes") if rule else None),
         ))
 
     # 결정론적 보정: LLM이 최상위 매칭 규칙을 누락하면 강제 주입
@@ -332,15 +336,46 @@ async def step1(
                 summary=top_rule.get("name", ""),
                 key_params=injected_key_params,
                 clarifying_questions=[],
+                notes=_with_sentinel_note(top_rule, top_rule.get("notes")),
             ))
 
     # 결정론적 재정렬: 규칙 엔진의 priority(낮을수록 더 구체적) 순서를 강제
     # LLM이 임의로 순서를 바꾸지 못하도록 함
-    rule_priority = {r["rule_id"]: r.get("priority", 999) for r in matched_rules}
+    # `_effective_priority`는 룰엔진이 '이하' 경계 정확값에서 붙이는 보정치 —
+    # 이 키를 무시하고 raw priority로 재정렬하면 엔진의 경계 보정이 여기서 되돌아간다
+    # (2026-08-13 T-2026W33-99: 1억원 정확값 1순위 뒤집힘의 두 번째 코드 위치).
+    # `_order_rank`는 룰엔진이 확정한 최종 순서(경계 보정 + 센티널 강등)다 — 이 값을
+    # 무시하고 priority로 재정렬하면 엔진의 보정이 여기서 되돌아간다(T-2026W33-99·148).
+    rule_priority = {r["rule_id"]: r.get("_order_rank",
+                                         r.get("_effective_priority", r.get("priority", 999)))
+                     for r in matched_rules}
     candidates.sort(key=lambda c: rule_priority.get(c.rule_id, 999))
     # F31 (2026-06-10): candidates max 3개 — UI 노출은 1순위+2~3 보조만, INTL 같은 보조 룰이 4번째로 끼면 제외
+    #
+    # 2026-08-14 T-2026W33-158: 이 상한이 **서로 다른 계약방법 보장(위 rules_to_ensure)을
+    # 무력화**하고 있었다. 국가기관 종합공사 4억원 실측: 매칭 4건 중 CST_003·CST_004·
+    # CST_007이 전부 같은 '일반경쟁입찰'(수치도 동일)이라 3슬롯을 중복이 채우고,
+    # 유일하게 **다른** 방법인 CST_005(공사 소액수의 — 시행령 제26조①5호가목1, 종합공사
+    # 4억원 **이하**는 금액만으로 수의 가능)가 priority 200이라 잘려나갔다. 즉 적법한
+    # 계약방법 하나가 응답에서 통째로 사라지고, 잘렸다는 사실조차 공시되지 않았다.
+    # → ①방법이 겹치지 않는 후보에 슬롯을 먼저 준다 ②그래도 잘린 것은 실토한다.
+    # 순위(priority) 자체는 손대지 않는다 — 경계 정확값 규약(_effective_priority)과 직교.
+    omitted_candidates: list[dict] = []
     if len(candidates) > 3:
-        candidates = candidates[:3]
+        kept: list = []
+        seen_methods: set[str] = set()
+        for c in candidates:                      # 1차: 서로 다른 계약방법 우선
+            if len(kept) < 3 and c.method not in seen_methods:
+                kept.append(c)
+                seen_methods.add(c.method)
+        for c in candidates:                      # 2차: 남은 슬롯을 우선순위대로
+            if len(kept) < 3 and c not in kept:
+                kept.append(c)
+        omitted_candidates = [
+            {"rule_id": c.rule_id, "method": c.method, "summary": c.summary}
+            for c in candidates if c not in kept
+        ]
+        candidates = sorted(kept, key=lambda c: rule_priority.get(c.rule_id, 999))
     for new_rank, c in enumerate(candidates, start=1):
         c.rank = new_rank
 
@@ -380,12 +415,19 @@ async def step1(
                         bidder_options=(top_rule.get("result", {}) or {}).get("bidder_options", []) or [],
                         bidder_selection=(top_rule.get("result", {}) or {}).get("bidder_selection"),
                         legal_basis=top_rule.get("legal_basis", []) or [],
+                        notes=top_rule.get("notes"),
                     )]
                     break
         if preferred:
             top = preferred[0]
             if "자동 고정" not in (top.summary or "") and "주입" not in (top.summary or ""):
                 top.summary = (top.summary or "") + " [중기간 경쟁제품 자동 고정]"
+            # 2026-08-14: 자동 고정으로 화면에서 사라지는 후보도 실토한다 — 의도된 고정이지만
+            # 읽는 쪽(에이전트·사용자)에겐 "이것뿐"으로 보이는 것은 같다.
+            omitted_candidates += [
+                {"rule_id": c.rule_id, "method": c.method, "summary": c.summary}
+                for c in candidates if c.rule_id != top.rule_id
+            ]
             candidates = [top]
             for nc in candidates:
                 nc.rank = 1
@@ -480,6 +522,7 @@ async def step1(
         knowledge_web=kw_model,
         next_step_questions=questions,
         decision_pack=step1_decision_pack,
+        omitted_candidates=omitted_candidates,
     )
 
     try:

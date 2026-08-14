@@ -3,11 +3,11 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from backend.config import get_settings, BASE_DIR
 
 logger = logging.getLogger("contract-compass")
-from backend.api.v1 import filter, docs, admin, feedback, ask, glossary, law, classify, status
+from backend.api.v1 import filter, docs, admin, feedback, ask, glossary, law, classify, status, penalty, adjustment
 
 DIST_DIR = BASE_DIR / "frontend" / "dist"
 
@@ -15,6 +15,12 @@ app = FastAPI(
     title="계약나침반 — 공공계약 방법 결정 도우미",
     description="국가계약법·지방계약법 기반 계약방법 결정 지원 서비스",
     version="1.0.0",
+    # 2026-08-04 보안 감사: /docs·/openapi.json이 contract.naru.build에 공개돼
+    # 있었다(실측 200). 무인증 LLM 서비스의 전 라우트·스키마 지도이고 관리자
+    # 라우트 이름까지 노출된다. SPA는 고정 경로만 부르므로 동작 영향 없다.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 settings = get_settings()
@@ -99,6 +105,8 @@ app.include_router(law.router, prefix="/api/v1")
 app.include_router(classify.router, prefix="/api/v1")
 app.include_router(status.router, prefix="/api/v1")
 app.include_router(status._rules_router, prefix="/api/v1")  # 룰 공개 조회
+app.include_router(penalty.router, prefix="/api/v1")  # 이행단계 — 지체상금·지연배상금
+app.include_router(adjustment.router, prefix="/api/v1")  # 이행단계 — 물가변동 계약금액 조정
 
 
 @app.on_event("startup")
@@ -160,11 +168,54 @@ async def ready():
         warnings.extend(_cwarn)
     except Exception as e:
         warnings.append(f"코퍼스 신선도 판독 실패: {e}")
+    # 3) 배포된 프런트 산출물 신선도 — dist는 .gitignore인데 여기서 서빙하므로, 빌드를
+    #    잊으면 커밋한 프런트 변경이 라이브에 없다(2026-08-10 실사고: 허브 링크 4일 미반영
+    #    → 롱테일 113건 고아). 전부 warning — 이 판독으로 503을 내지 않는다.
+    try:
+        from backend.services.dist_status import scan_dist, evaluate_dist_freshness
+        _dinfo, _dwarn = evaluate_dist_freshness(
+            scan_dist(DIST_DIR, BASE_DIR / "frontend" / "public", BASE_DIR),
+            _dt.now().timestamp())
+        info.update(_dinfo)
+        warnings.extend(_dwarn)
+    except Exception as e:
+        warnings.append(f"dist 신선도 판독 실패: {e}")
     status_ = "degraded" if failures else ("warn" if warnings else "ok")
     body = {"status": status_, "failures": failures, "warnings": warnings, "info": info}
     if failures:
         return JSONResponse(status_code=503, content=body)
     return body
+
+
+# ── 소프트404 차단 (T-2026W33-11) ────────────────────────────────────────────
+# 종전 serve_spa는 미존재 경로를 전부 index.html 200으로 돌려줬다(라이브 실측:
+# /g/anything.html·/totally-bogus-xyz 모두 200). 프런트에 client-side 라우터가
+# 없고(해시 상태전환뿐) 정당 HTML 경로는 `/`와 생성된 정적 파일뿐이라, 롱테일
+# 113건 색인 직후인 지금은 크롤예산 낭비·색인오염이 실질 위험이다.
+# 그래서 ① 확장자가 있는 경로 ② g/·assets/ 네임스페이스는 실물이 없으면 404,
+# 그 외 확장자 없는 경로는 종전대로 SPA 폴백(미래에 라우터가 붙어도 안 깨지게).
+_SPA_404_NAMESPACES = ("g", "assets")
+
+
+def spa_should_404(full_path: str) -> bool:
+    """실물이 없을 때 SPA 폴백(200) 대신 404를 줘야 하는 경로인가."""
+    path = full_path.strip("/")
+    if not path:
+        return False
+    head = path.split("/", 1)[0]
+    if head in _SPA_404_NAMESPACES:
+        return True
+    return "." in path.rsplit("/", 1)[-1]
+
+
+def resolve_dist_path(full_path: str, dist: Path = None):
+    """dist 안으로 한정한 실경로 — 밖으로 나가는 경로(`../`)는 None."""
+    base = (dist or DIST_DIR).resolve()
+    try:
+        candidate = (base / full_path).resolve()
+    except OSError:
+        return None
+    return candidate if candidate == base or base in candidate.parents else None
 
 
 # React SPA 정적 서빙 (루트 경로 — API 라우터가 먼저 등록돼 /api/*는 영향 없음)
@@ -176,7 +227,16 @@ if DIST_DIR.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
-        candidate = DIST_DIR / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(str(candidate))
+        candidate = resolve_dist_path(full_path) if full_path else None
+        if candidate is not None:
+            if candidate.is_file():
+                return FileResponse(str(candidate))
+            # 디렉터리 진입(`/g/`)은 실물 허브 페이지로 합류시킨다 — 껍데기 200 금지.
+            # sitemap·canonical이 /g/index.html이라 URL을 하나로 모으는 쪽이 맞다.
+            if candidate.is_dir() and (candidate / "index.html").is_file():
+                rel = candidate.relative_to(DIST_DIR.resolve())
+                return RedirectResponse(f"/{rel.as_posix()}/index.html", status_code=301)
+        if spa_should_404(full_path):
+            # 껍데기를 보여주되 상태코드로는 없음을 말한다(soft 404 회피).
+            return FileResponse(str(DIST_DIR / "index.html"), status_code=404, headers=_NO_CACHE)
         return FileResponse(str(DIST_DIR / "index.html"), headers=_NO_CACHE)

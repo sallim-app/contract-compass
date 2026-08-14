@@ -31,6 +31,10 @@ class Candidate(BaseModel):
     bidder_selection: str | None = None
     # F4-1 e2e: 매칭된 룰의 legal_basis 노출 (대기업 참여 제한·SW진흥법 등 검증용)
     legal_basis: list[str] = []
+    # 2026-08-12 R23(T-2026W33-58): 룰 notes(요건 경고 — "2천만 초과~1억은 상대방 요건
+    # 충족 시만 수의")가 룰 파일에만 있고 응답에 실리지 않아 정적 SEO 페이지만 경고를
+    # 노출하는 계층 간 자기모순이 있었다. 후보마다 notes를 배달한다.
+    notes: str | None = None
 
 
 class NextStepQuestion(BaseModel):
@@ -66,6 +70,9 @@ class Step1Response(BaseModel):
     # F28 (2026-06-10): Step2 화면에서도 Step3와 동일한 결정론 자료 팩 노출.
     # 사용자 의견 "2단계 참조근거가 3단계와 다른데" — 1순위 룰의 decision_pack을 미리 전달.
     decision_pack: dict = {}
+    # 2026-08-14 T-2026W33-158: 노출 상한 3개로 잘린 후보를 실토한다(조용한 절단 금지).
+    # 각 항목 {rule_id, method, summary}. 비어 있으면 잘린 것이 없다는 뜻.
+    omitted_candidates: list[dict] = []
 
 
 class FinalRecommendation(BaseModel):

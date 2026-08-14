@@ -39,6 +39,9 @@
 | `search_references` | 전 코퍼스 통합 검색 — 계약예규·조달청/행안부 적격심사 세부기준(별표)·실무가이드 | ✗ |
 | `search_cases` | 판례·법령해석례 검색 (law.go.kr 실시간 — 항상 현행) | ✗ |
 | `get_case` | 판시사항·판결요지·참조조문 / 질의요지·회답·이유 본문 | ✗ |
+| `estimate_delay_penalty` | **지체상금·지연배상금 산정** — 법정 요율·기준금액·30% 한도 결정론 적용(국가/지방 요율이 다르다) | ✗ |
+| `delay_exemption_guide` | **지체일수 불산입(면책) 사유 지도** — 예규 사유·확인할 사실·기재부/행안부 회신 선례 | ✗ |
+| `check_price_adjustment` | **물가변동 계약금액 조정** — 90일·3%·단품 문턱(국가 15%/지방 10%) 판정 + 조정금액·선금공제 산식 | ✗ |
 | `report_issue` | 오류·개선 제보(오인용·개정 미반영 등) — 운영 검토 파이프라인 직결 | ✗ |
 
 클라이언트 설정:
@@ -61,7 +64,32 @@ claude mcp add --transport http contract-compass https://contract.sallim.app/mcp
 
 ChatGPT: Settings → Connectors → Developer mode에서 위 URL을 커넥터로 추가.
 
+설치했으면 AI에게 이렇게 물어 30초 안에 확인하세요 —
+*"국가기관이 2,000만원짜리 물품을 사려는데 어떤 계약방법을 쓸 수 있어? 근거 조문도."*
+소액수의계약과 **국가계약법 시행령 제26조 제1항 제5호**가 나오면 정상입니다.
+
 도구 명세·아키텍처·한도 정책 상세는 [docs/MCP.md](docs/MCP.md) 참조.
+
+### 평가셋 — 우리 판정을 남이 되짚을 수 있게
+
+이 서버가 무엇을 맞히고 무엇을 못 맞히는지는 [`evaluation.xml`](evaluation.xml)에
+공개돼 있습니다(20문항, 답은 전부 실측값). 지어낸 문항은 없습니다 — 미검증 문항은
+회귀 검사를 거짓 실패시키기 때문입니다.
+
+기계 검증은 결정론 회귀 하네스가 합니다. LLM을 쓰지 않아 비용 없이 재현됩니다:
+
+```bash
+python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp
+# 28 케이스 · exit 0=전부 PASS / 1=회귀 존재 / 2=서버 미도달
+```
+
+각 케이스는 과거에 **실제로 발견·수리된 결함**의 회귀입니다(삭제된 조문을 근거처럼
+반환하던 문제, 지자체 판정에 국가 수치가 섞이던 문제 등). 무료 티어는 IP당 50콜/일이고
+이 스위트가 28콜을 쓰므로 하루 1회가 한계입니다.
+
+금액구간별 계약방법·수의계약 사유·용어 가이드 페이지(`/g/`)의 생성·검증·배포 절차는
+[docs/PROGRAMMATIC_SEO.md](docs/PROGRAMMATIC_SEO.md) 참조 — 룰셋에서 파생 생성하므로
+페이지를 수기 편집하지 말 것.
 로컬 stdio 실행: `python3 mcp/server.py` (등록: `codex mcp add contract-compass -- python3 /path/to/mcp/server.py`)
 
 ## 구성
@@ -69,12 +97,12 @@ ChatGPT: Settings → Connectors → Developer mode에서 위 URL을 커넥터�
 ```
 backend/    FastAPI — 룰엔진·RAG·LLM 연동 (frontend/dist 정적 서빙 포함, :8402)
 frontend/   React + TypeScript (Vite) — 위저드 UI
-mcp/        MCP 서버 — stdio(로컬) / Streamable HTTP(:8403, 원격) · 무LLM 도구 6종
+mcp/        MCP 서버 — stdio(로컬) / Streamable HTTP(:8403, 원격) · 무LLM 도구 11종
 edge/       Cloudflare Worker (contract-edge) — 장애 폴백 게이트 · law API 엣지 캐시
 rules/      계약 룰셋 JSON (contract_rules·law_registry 등) ← 결정론 핵심
-tools/      법령·예규·별표 수집/인덱싱 파이프라인 (law.go.kr Open API)
+tools/      법령·예규·별표 수집/인덱싱 파이프라인 (law.go.kr Open API) · 가이드 페이지 생성기
 etl/        PDF/DOCX → 청크 → ChromaDB 파이프라인
-docs/       MCP 명세 · 장애 전환 런북
+docs/       MCP 명세 · 장애 전환 런북 · 가이드 페이지 파이프라인
 scripts/    스탠바이 동기화 · 반출 전 기밀 검사
 tests/      단위·회귀 테스트 + Ask 질문뱅크
 ```

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { submitFeedback } from '../api/client'
 import { getDeviceId } from '../lib/deviceId'
 import { authHeaders, login } from '../lib/auth'
+import { track } from '../lib/track'
 import AnnotatedText from '../components/AnnotatedText'
 import { useSourceDrawer, SourceInlinePanel } from '../components/SourceDrawer'
 import { tone } from '../components/designer'
@@ -452,6 +453,9 @@ export default function AskPage({ onClose }: { onClose: () => void }) {
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setLoading(true)
     setMessages((prev) => [...prev, { role: 'assistant', text: '', loading: true }])
+    // 전환: 법령 Q&A 질문 전송. 질문 원문은 자유입력(기관 내부 사업정보가 섞인다)이라
+    // 절대 넘기지 않고, 길이 구간과 대화 차례만 남긴다.
+    track('ask-submit', { len_bucket: q.length < 20 ? 'short' : q.length < 80 ? 'mid' : 'long' })
 
     try {
       // SSE 스트리밍 — 글자 단위 실시간 출력

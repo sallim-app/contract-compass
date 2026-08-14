@@ -18,7 +18,7 @@
 3. **구조화 실패** — 오류·한도 초과는 예외가 아니라 `{"error", "message", "hint"}` dict로
    반환된다. 에이전트는 hint의 행동지침을 따르면 된다.
 
-## 도구 명세 (8종)
+## 도구 명세 (11종)
 
 ### decide_contract_method — 계약방법 결정론 판정
 룰엔진(94룰, 국가/지방/공기업 3프로파일)이 적용 가능한 계약방법 후보를 법령 근거와 반환.
@@ -26,17 +26,28 @@
   `org_type`("national"|"local"|"public_corp"), 선택: `service_type`,
   `construction_specialty`, `is_sme_competition_product`, `negotiation_reason`
 - 반환: `candidates[]`(method·rule_id·summary·key_params(적격심사 통과점수·낙찰하한율)·
-  legal_basis), `practice_alternatives`, `explanation`(결정론 자료 팩), `laws_applied`
+  legal_basis), `omitted_candidates[]`, `practice_alternatives`, `explanation`(결정론 자료 팩), `laws_applied`
+- **`candidates`는 최대 3건**이다. 상한으로 잘린 후보는 `omitted_candidates`
+  (`{rule_id, method, summary}`)에 실린다 — 비어 있을 때만 "이게 전부"라고 말할 수 있다.
+  슬롯은 **서로 다른 계약방법에 먼저** 배분한다(중복 경쟁룰이 유일한 수의 후보를 밀어내던
+  결함 수리, 2026-08-14 · 회귀 R29·R30)
 - 백엔드 LLM 보조설명은 `skip_llm`으로 생략 — 판정 결과는 동일, 비용 0
 
 ### search_law — 법령 조문 검색
 - 입력: `query`(예: "수의계약", "시행령 제26조", 자연어 복합 쿼리 가능), `top_k`(≤20)
 - 다단어는 부분매치 순위(2토큰 이상), 0건이면 시맨틱 폴백. 0건 시 재질의 `hint` 동봉
-- 반환: `{hits: [{law_name, article, content, snippet, law_ref}], count}`
+- 반환: `{hits: [{law_name, article, content, snippet, law_ref}], count, total_found}`
+- **상한 조정은 공시한다**: 요청 `top_k`가 상한을 넘으면 `top_k_applied`
+  (`{requested, applied, cap}`)가 실린다. 상한에 닿아 잘린 경우 `note`는 "top_k를 올려라"
+  대신 **실행 가능한 다음 행동**(질의 좁히기·get_law_article 직접 조회)을 준다
+  (2026-08-14 · 회귀 R39). `search_references`·`search_cases`도 같은 규약
 
 ### get_law_article — 조문 원문 전체 (현행)
 - 입력: `ref`(예: "국가계약법 시행령 제26조", "지방계약법 시행규칙 제24조")
 - 긴 조문은 항 단위 자식 청크를 조립해 전문 복원. 코퍼스에 없으면 구조화 404
+- `assumption`: 법령명을 생략한 참조("시행령 제26조")를 국가계약법으로 **해석했을 때만**
+  실린다 — 추정 근거·같은 조문번호를 가진 다른 시행령·재호출 지침 포함. 지방계약 질문이면
+  이 필드가 틀린 법을 보고 있다는 신호다(2026-08-14 · 회귀 R40·R41)
 - `notes[]`: **법률 자체의 미정비 상호인용** 경고(원문은 무수정). 예 — 지방보조금법
   제21조⑤가 "제2항 각 호"를 인용하나 제2항에 각 호가 없음(2023.4.11 개정으로 항이
   밀렸는데 인용 미정비, law.go.kr 현행도 동일). 탐지는 결정론·LLM 미사용
@@ -55,10 +66,60 @@
 법령+계약예규+조달청·행안부 적격심사 세부기준(별표 포함)+감사원 실무가이드.
 낙찰하한율·적격심사 배점·부정당 제재기준처럼 **법령 본문 밖** 질의에 사용.
 - 입력: `query`, `top_k`(≤12) · 반환: `{hits: [{source, section, source_type, excerpt, relevance}]}`
+- **추출 품질 공시**(2026-08-14 · 회귀 R60): 손상된 PDF 추출본은 히트에
+  `extraction_quality`(`two_column_pdf`|`control_chars_cleaned`)와 `quality_warning`을 달고
+  온다 — 경고가 붙은 발췌는 끊긴 부분을 인용하지 말고 원문을 확인하라. 판독 불가 문서
+  (폰트 인코딩 손상)는 결과에서 제외되고, 검색에 걸렸다 빠졌으면 `excluded_sources`로 공시한다
 
 ### search_cases — 판례·법령해석례 검색 (law.go.kr 실시간)
 - 입력: `query`(핵심 명사 위주), `top_k`(종류당 ≤10), `kind`("prec"판례|"expc"해석례|"all")
-- 반환: `{hits: [{kind, case_id, title, org, case_no, date}]}` — 본문은 get_case로
+- 반환: `{hits: [{kind, case_id, source_url, title, org, case_no, date}]}` — 본문은 get_case로
+
+### estimate_delay_penalty — 지체상금·지연배상금 산정 (이행단계)
+계약 체결 **이후** 축의 첫 판정 도구. 법정 요율·기준금액·30% 한도를 결정론으로 적용한다.
+설계·근거표는 `docs/DELAY-PENALTY-AXIS.md`, 수치의 진실원은 `rules/delay_penalty_rules.json`.
+- 입력: `contract_kind`(construction|product_manufacture|product_repair|service|
+  military_food|transport_storage), `org_type`(**필수** — 국가/지방 요율이 다르다),
+  `contract_amount`(원 · 장기계속은 **연차별** 금액), `delay_days`, 선택:
+  `excluded_days`·`accepted_portion_amount`·`design_build_approved`
+- 반환: `term`(국가=지체상금 / 지방=지연배상금)·`rate`(근거 호까지)·`base_amount`(계약금액
+  −인수분)·`counted_days`(선언 지체−선언 면책)·`amount_raw`·`cap`(30% 한도)·`amount`·
+  `warnings[]`·`legal_basis[]`
+- **이 도구는 지체일수를 정하지 않는다** — 준공검사 소요기간·면책 사유 해당 여부는 사실
+  판단이라 사용자 선언값을 그대로 쓰고 `counted_days.disclaimer`로 밝힌다. 면책 쟁점은
+  `search_references`로 예규·감사원 실무가이드를 찾아 보강하라
+- `rate.inferred:true`면 법문에 명시된 값이 아니라 우리 해석이다(지방 군용 음·식료품) —
+  그대로 단정하지 말고 경고를 함께 전달할 것
+
+### delay_exemption_guide — 지체일수 불산입(면책) 사유 지도 (이행단계 Phase 2)
+`estimate_delay_penalty`가 "지체일수는 정하지 않는다"고 거부한 자리에 **대신 줄 것**.
+판정표가 아니라 지도다 — 일반조건 문언이 "계약담당공무원이 인정할 때"를 요건으로 두므로
+판단은 발주기관 몫이고, 도구는 사유·원문·확인할 사실·선례만 편다.
+- 입력: `contract_kind`(estimate_delay_penalty와 동일), `ground`(선택 — 사유 하나 상세)
+- 반환: `grounds[]`(label·basis·quote·must_establish·partial)·`day_count_rules[]`·
+  `precedents[]`(기재부·행안부 회신, 문서번호·일자 포함)·`who_decides`·`next_steps`
+- 계약유형→일반조건 계열 매핑은 우리 편의이며, **계약서에 편입된 일반조건이 진실원**임을
+  `general_conditions_warning`으로 함께 낸다
+- `sw_requirement_change`(용역 SW)는 **해당 일수의 1/2만** 불산입 — excluded_days에 넣을 때 절반
+- `quote_truncated:true`면 회수 인용이 끊긴 것이다. 이어 붙이지 말고 search_references로 전문 확인
+- 2026-08-14 · 회귀 R43~R46
+
+### check_price_adjustment — 물가변동 계약금액 조정 요건·산식 (이행단계 Phase 3)
+근거=국가계약법 시행령 제64조·시행규칙 제74조 / 지방계약법 시행령 제73조.
+수치의 진실원은 `rules/price_adjustment_rules.json`.
+- 입력: `org_type`(**필수**), `contract_date`·`check_date`(YYYY-MM-DD), 선택:
+  `last_adjustment_date`·`adjustment_rate_pct`·`method_specified_in_contract`(item|index)·
+  `urgent_exception`·`single_item_rate_pct`·`single_item_share_over_5permille`·
+  `is_construction`·`adjustment_base_amount`·`advance_payment_ratio`
+- 반환: `verdict`(requirements_met|requirements_not_met|exception_path|**undetermined**)·
+  `period`(90일 기산·경과일)·`rate`(3% 문턱)·`method`(품목/지수 결정 규칙)·
+  `single_item`(단품 문턱)·`computed`(조정금액·선금공제·순증)·`cannot_do`·`legal_basis`
+- **조정률은 우리가 산정하지 못한다** — 지수·단가 원천 미보유. 사용자가 산정한 값을 받고,
+  없으면 `rate.met: null` + `verdict: undetermined`로 **판정을 보류**한다(못 봄 ≠ 없음)
+- **단품 조정 문턱은 국가·공기업 15%, 지방 10%**(지방 2024.2.13 개정으로 갈렸다) —
+  같은 12%가 기관에 따라 정반대 결과가 된다. 회귀 R48·R49가 쌍으로 지킨다
+- 90일 예외(천재지변·원자재 급등)는 자동 통과가 아니라 **발주기관 인정 사항**임을 함께 낸다
+- 2026-08-14 · 회귀 R47~R52
 
 ### report_issue — 오류·개선 제보 (유일한 쓰기 도구)
 - 입력: `category`(wrong_citation|outdated_law|wrong_ruling|tool_error|feature_request|other),
@@ -69,11 +130,17 @@
 ### get_case — 판례/해석례 본문
 - 입력: `kind`, `case_id`(search_cases 결과)
 - 반환(판례): 판시사항·판결요지·참조조문 / (해석례): 질의요지·회답·이유
+- `source_url`: 국가법령정보센터 원문 주소 — 인용 시 함께 제시하라(본문 미제공
+  오류 응답에도 실린다). 2026-08-14 · 회귀 R42
 - 판례가 인용한 참조조문은 get_law_article로 교차확인 권장
 
 ## 권장 사용 흐름
 
 - 계약방법 질문 → `decide_contract_method` → 근거 조문 `get_law_article` 검증
+- **이행 지체 질문** → `estimate_delay_penalty`(금액) → 면책 쟁점이 있으면
+  `delay_exemption_guide`(사유·확인할 사실) → 불산입 일수 확정 후 excluded_days로 재계산
+- **자재값·물가 상승 질문** → `check_price_adjustment`(90일·3%·단품 문턱 판정, 조정률은
+  사용자·발주기관 산정값을 받아 산식 적용)
 - **질문에 과거 시점이 있으면**(체결일·공고일·처분일) → `get_law_article_asof`로 그
   시점 조문 확인. 현행과 다르면 `is_current:false`가 신호
 - 수치·기준 질문(하한율·보증금·제재기간) → `search_references`(별표) + `search_law`

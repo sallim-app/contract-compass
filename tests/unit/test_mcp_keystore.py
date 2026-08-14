@@ -13,10 +13,16 @@ import keystore  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
+import auth  # noqa: E402
+
+
 @pytest.fixture(autouse=True)
 def _tmp_store(tmp_path, monkeypatch):
     monkeypatch.setattr(keystore, "KEYS_PATH", tmp_path / "keys.json")
     monkeypatch.setattr(keystore, "CALL_LOG", tmp_path / "calls.jsonl")
+    # owner 파생 해시(auth.subject_hash)가 리포 실물 salt를 만지지 않게 격리
+    monkeypatch.setattr(auth, "SALT_FILE", tmp_path / ".subject_salt")
+    monkeypatch.setattr(auth, "_salt_cache", None)
 
 
 def test_issue_self_returns_plaintext_and_extended_fields():
@@ -25,6 +31,34 @@ def test_issue_self_returns_plaintext_and_extended_fields():
     assert key.startswith("cc_live_") and rec["key_hash"] == hashlib.sha256(key.encode()).hexdigest()
     assert rec["channel"] == "kmong" and rec["amount_krw"] == 9900
     assert rec["contact"] == "a@b.c" and rec["source"] == "self"
+
+
+def test_issue_requires_owner():
+    """T-2026W32-85: 소유자 미상 키 발급 금지 — owner·contact·order_id 셋 다 비면 거부.
+
+    realty-mcp 실사고 재발 방지: name 자유 메모뿐이면 QA 키가 유료 분모에 섞인다."""
+    with pytest.raises(ValueError, match="owner"):
+        keystore.issue("QA용")
+    assert keystore.list_keys() == []   # 거부된 발급이 대장에 남으면 안 된다
+
+
+def test_issue_owner_derivation_and_internal_flag():
+    """owner 미명시 시 contact → order_id 순 파생(웹훅 호출부 무수정 귀속).
+
+    contact(이메일)가 먼저다 — order_id는 구매 건별이라 재구매마다 owner가 갈라져
+    유료 순사용자가 부풀려진다(codex 2R). 파생분은 salt 해시로 담는다 — owner는
+    0644 호출 로그에 매 호출 실리므로 원문 이메일이 키 대장(0600) 밖으로 새면 안 되고,
+    salt 없는 해시는 추정 이메일 사전 대조로 복원된다(codex 1·2R)."""
+    _, k1 = keystore.issue("LS", key="K-c", contact="buyer@x.com", order_id="ls-1")
+    assert k1["owner"].startswith("c:") and "buyer" not in k1["owner"]
+    assert k1["contact"] == "buyer@x.com"       # 원문은 대장 안 contact에만
+    assert k1["is_internal"] is False           # 판매분 기본값 = 외부(분모 포함)
+    _, k2 = keystore.issue("재구매", key="K-c2", contact=" Buyer@X.com ", order_id="ls-2")
+    assert k2["owner"] == k1["owner"]           # 같은 구매자 = 같은 owner(대소문자·공백 정규화)
+    _, by_order = keystore.issue("Creem", key="K-o", order_id="creem-77")
+    assert by_order["owner"] == "creem-77"      # contact 없으면 order_id 폴백
+    _, qa = keystore.issue("야간QA", owner="naru-qa", purpose="QA", internal=True)
+    assert qa["owner"] == "naru-qa" and qa["is_internal"] is True and qa["purpose"] == "QA"
 
 
 def test_issue_mirror_no_plaintext():
@@ -52,8 +86,8 @@ def test_revoke_by_order_for_refund():
 
 
 def test_report_aggregates_revenue_and_expiring():
-    keystore.issue("A", days=2, channel="kmong", amount_krw=9900)     # D-7 임박
-    keystore.issue("B", days=60, channel="lemonsqueezy", amount_krw=24900)
+    keystore.issue("A", days=2, channel="kmong", amount_krw=9900, owner="크몽#A")  # D-7 임박
+    keystore.issue("B", days=60, channel="lemonsqueezy", amount_krw=24900, owner="ls#B")
     out = keystore.report()
     assert "만료임박(D-7) 1" in out
     assert "9,900원" in out and "24,900원" in out and "34,800원" in out

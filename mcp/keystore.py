@@ -8,6 +8,11 @@ issue_key.py(CLI)와 server.py의 구매 웹훅이 공유한다. 저장소는 da
   key_hash·key_prefix·name·is_active·created_at·expires_at·daily_limit (기존)
   + channel("manual"|"kmong"|"lemonsqueezy"…) · amount_krw · contact · order_id
   + source("self"=cc_live_ 자체 발급 | "ls_mirror"=Lemon Squeezy 라이선스 키 미러)
+  + owner(누구 것인가 — 필수) · purpose(왜 발급했나) · is_internal(우리 것인가,
+    2026-08-09 T-2026W32-85 realty-mcp 이식 — 분모 오염 방지: 종전엔 name 자유 메모뿐이라
+    QA 키와 구매자 키를 로그만 보고 구분할 수 없었다. realty-mcp에서 유료 호출 52건 전량이
+    우리 QA 키인데 집계가 '유료 순사용자 3명'으로 읽은 실사고의 재발 방지다.
+    auth.resolve_access가 paid Access에 owner·is_internal을 그대로 싣는다.)
 """
 from __future__ import annotations
 
@@ -50,17 +55,51 @@ def _locked_update(fn):
     return result
 
 
+def _contact_owner(contact: str) -> str:
+    """이메일 파생 owner — `c:` 접두 salt 해시 12자. salt 불가·contact 공란이면 빈 문자열.
+
+    auth.subject_hash(logs/.subject_salt)를 그대로 쓴다 — salt를 이 파일이 따로 들면
+    두 파일이 서로 다른 salt로 갈라져도 아무도 모른다. `owner|` 접두는 IP 해시와
+    입력 공간을 분리하려는 것(같은 salt로 두 종류를 해싱하므로)."""
+    # 대소문자·공백만 다른 같은 이메일이 다른 owner로 갈라지지 않게 정규화(codex 3R)
+    contact = (contact or "").strip().lower()
+    if not contact:
+        return ""
+    import auth  # mcp/ 평면 모듈 — server.py와 같은 방식. auth는 keystore를 모른다(순환 없음)
+    h = auth.subject_hash(f"owner|{contact}")
+    return f"c:{h}" if h else ""
+
+
 def issue(name: str, days: int = 30, daily: int = 2000, *,
           channel: str = "manual", amount_krw: int = 0, contact: str = "",
-          order_id: str = "", key: str | None = None, source: str = "self") -> tuple[str | None, dict]:
+          order_id: str = "", key: str | None = None, source: str = "self",
+          owner: str = "", purpose: str = "", internal: bool = False) -> tuple[str | None, dict]:
     """키 등록. key=None이면 cc_live_ 신규 생성(평문 반환), 지정 시 미러(평문 미반환).
 
     order_id가 이미 대장에 있으면 발급하지 않고 기존 레코드 반환(웹훅 재전송 멱등).
+
+    **owner는 필수다** (T-2026W32-85). 명시가 없으면 contact → order_id 순으로 파생한다 —
+    웹훅 판매분은 이메일·주문번호가 항상 있어 호출부 수정 없이 구매자로 귀속된다.
+    셋 다 비면 ValueError: 소유자 미상 키를 조용히 만들면 분모가 다시 오염된다.
+
+    파생 순서와 해시(2026-08-09 codex 2라운드 반영):
+    - **contact(이메일)가 order_id보다 먼저다** — order_id는 구매 건마다 새 값이라
+      재구매·갱신 때마다 owner가 갈라져 유료 순사용자가 주문 수만큼 부풀려진다.
+      contact는 구매자 고유라 키가 여럿이어도 한 사람으로 접힌다.
+    - **contact 파생분은 salt 해시(auth.subject_hash 재사용)로 담는다** — owner는
+      auth.access_fields를 타고 키 대장(0600)보다 넓은 호출 로그(mcp_calls.jsonl,
+      0644)에 매 호출 기록되므로 원문 이메일 복사는 보호 경계 밖 노출이고, salt 없는
+      해시는 추정 이메일 사전 대조로 즉시 복원된다. 원문은 대장 안 contact 필드에만 —
+      운영자는 report()에서 둘 다 본다. salt를 못 쓰면 order_id로 폴백(귀속은 유지).
     """
     if order_id:
         existing = find_by_order(order_id)
         if existing:
             return None, existing
+    owner = owner or _contact_owner(contact) or order_id
+    if not owner:
+        raise ValueError("owner는 필수다 — 구매자 식별자(주문번호·연락처) 또는 "
+                         "내부 키면 owner='naru-qa', internal=True로 발급하라")
     plaintext = None
     if key is None:
         plaintext = key = f"cc_live_{_secrets.token_hex(32)}"
@@ -69,6 +108,9 @@ def issue(name: str, days: int = 30, daily: int = 2000, *,
         "key_hash": hashlib.sha256(key.encode()).hexdigest(),
         "key_prefix": key[:16],
         "name": name,
+        "owner": owner,           # 누구 것인가 — 구매자 식별(주문번호·연락처 등)
+        "purpose": purpose,       # 왜 발급했나 — 판매/QA/데모
+        "is_internal": internal,  # 우리 것인가 — 집계 분모에서 제외되는 유일한 근거
         "is_active": True,
         "created_at": now.isoformat(timespec="seconds"),
         "expires_at": (now + timedelta(days=days)).isoformat(timespec="seconds"),
@@ -182,9 +224,11 @@ def report() -> str:
         u = usage.get(r.get("key_prefix", ""), 0)
         exp = str(r.get("expires_at", ""))[:10]
         flag = " ⚠️D-7" if r in expiring else ""
-        lines.append(f"  {r.get('key_prefix')}  ~{exp}{flag}  {r.get('daily_limit')}콜/일  "
+        # 내부 키를 눈에 띄게 — 이 목록을 보고 '유료 고객 N명'으로 오독하지 않게.
+        kind = "내부" if r.get("is_internal") else ("외부" if "is_internal" in r else "미상")
+        lines.append(f"  {r.get('key_prefix')}  {kind}  ~{exp}{flag}  {r.get('daily_limit')}콜/일  "
                      f"7일사용 {u}  [{r.get('channel', '?')}/{r.get('source', 'self')}] "
-                     f"{r.get('name', '')} {r.get('contact', '')}")
+                     f"{r.get('owner') or r.get('name', '')} {r.get('contact', '')}")
     if not active:
         lines.append("  (없음)")
     return "\n".join(lines)

@@ -74,15 +74,20 @@ class RateLimiter:
         return conn
 
     def _get_raw_ip(self, request: Request) -> str:
-        # XFF의 루프백 항목은 신뢰하지 않는다 — 외부 클라이언트가 "X-Forwarded-For:
-        # 127.0.0.1"을 실어 화이트리스트·내부예산 스코프를 가장할 수 있기 때문.
-        # nginx($proxy_add_x_forwarded_for)가 실제 peer를 뒤에 덧붙이므로 첫 비루프백을 취한다.
-        xff = request.headers.get("x-forwarded-for")
-        if xff:
-            for part in xff.split(","):
-                ip = part.strip()
-                if ip and ip not in _LOOPBACK_IPS:
-                    return ip
+        """레이트리밋 주체 IP. **X-Real-IP만 신뢰한다.**
+
+        2026-08-04 보안 감사 정정 — 기존 구현은 "XFF의 첫 **비루프백** 항목"을 썼다.
+        루프백 위조는 막았지만 **비루프백 값도 똑같이 클라이언트가 정한다**:
+        `X-Forwarded-For: 8.8.8.8`을 매 요청 바꿔 보내면 버킷이 매번 새로 생겨
+        10/분·100/시·500/일이 한 번도 발동하지 않는다.
+
+        nginx는 `X-Real-IP $remote_addr`로 이 헤더를 덮어쓰고, 같은 감사에서
+        `set_real_ip_from`(CF 대역)+`real_ip_header CF-Connecting-IP`를 넣어
+        `$remote_addr`가 실 클라이언트가 되게 했다 — 이제 위조 불가한 값은 이것뿐이다.
+        """
+        v = request.headers.get("x-real-ip")
+        if v:
+            return v.strip()
         if request.client:
             return request.client.host
         return "unknown"

@@ -4,6 +4,11 @@
 RAG 검색 시 dense(임베딩) + BM25(키워드) RRF 결합.
 
 토큰화: 한글 단어 + 영문 + 숫자 패턴 (KoNLPy 없이 정규식 기반 — 도메인 용어 보존)
+
+⚠️ **코퍼스를 바꾼 뒤에는 백엔드를 재시작해야 한다**(2026-08-14 실측): 실행 중인
+   uvicorn이 이전 BM25 pickle과 chroma 핸들을 물고 있어, 삭제된 청크 id를 참조하다
+   검색 경로가 500을 낸다(회귀 2건이 backend_error로 떨어져 발견). 절차:
+   재색인 → BM25 재구축 → `sudo systemctl restart contract-compass` → 회귀 확인.
 """
 import pickle
 import re

@@ -87,6 +87,41 @@ def _heading_level(size: float, h1_threshold: float) -> int:
     return 0
 
 
+# 제어문자 세정 — 감사원 가이드 원본엔 BEL(0x07)이 불릿 자리에 박혀 있다(쪽당 4개 내외).
+# 서빙 계층에도 세정이 있지만(rag_service._quality_gate) **색인에 들어가지 않는 것이 근본**이다.
+_CTRL_RE = re.compile("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u200b-\u200f\u202a-\u202e\ufeff]")
+
+
+def _clean_text(t: str) -> str:
+    return _CTRL_RE.sub(" ", t or "")
+
+
+def _reading_order(blocks: list[dict], page_width: float) -> list[dict]:
+    """블록을 **읽는 순서**로 정렬 — 2단 편집이면 왼쪽 단을 다 읽고 오른쪽 단으로.
+
+    2026-08-14 T-2026W33-173: 종전엔 y좌표만으로 정렬해서, 2단 편집 페이지가 **행 단위로
+    교차**됐다(감사원 「공공계약 실무가이드」 208쪽 전체). 실측 25쪽에서 목차·본문·다른 절의
+    문단이 한 줄씩 번갈아 섞여 문장이 성립하지 않았고, 그 텍스트가 검색 근거로 나갔다.
+    41쪽에서는 'Check! 다수공급자계약' 설명과 유권해석 Q&A가 교차했다.
+
+    판별은 좌표로 한다(문서 이름·페이지 번호 같은 우연한 사실에 기대지 않는다):
+      · 폭이 페이지의 62%를 넘는 블록 = 단을 가로지르는 제목·표 → 앞에 둔다
+      · 나머지를 페이지 중앙으로 좌/우로 가르고, 한쪽이 3블록 미만이면 단일 단으로 본다
+    같은 줄에 나란한 블록은 x 순서를 지킨다(종전 y 단독 정렬은 이것도 보장하지 않았다).
+    """
+    def key(b: dict) -> tuple:
+        # y를 6pt 단위로 눌러 같은 줄로 취급 후 x 순 — 표 셀이 뒤섞이지 않게 한다
+        return (round(b["bbox"][1] / 6), b["bbox"][0])
+
+    mid = page_width / 2
+    full = [b for b in blocks if (b["bbox"][2] - b["bbox"][0]) > page_width * 0.62]
+    rest = [b for b in blocks if b not in full]
+    left = [b for b in rest if b["bbox"][0] < mid]
+    right = [b for b in rest if b["bbox"][0] >= mid]
+    if len(left) < 3 or len(right) < 3:
+        return sorted(blocks, key=key)
+    return sorted(full, key=key) + sorted(left, key=key) + sorted(right, key=key)
+
 def parse_pdf(file_path: Path) -> dict:
     """PDF 파일 → 섹션/단락 구조 dict. 법령 참조는 단락 메타로 포함."""
     doc = fitz.open(str(file_path))
@@ -122,10 +157,10 @@ def parse_pdf(file_path: Path) -> dict:
 
     for pg_num in range(1, len(doc)):   # 표지(0페이지) 건너뜀
         page = doc[pg_num]
-        blocks = page.get_text("dict")["blocks"]
+        blocks = [b for b in page.get_text("dict")["blocks"] if b.get("type", 0) == 0]
 
-        # 세로 위치 순 정렬
-        sorted_blocks = sorted(blocks, key=lambda b: b.get("bbox", [0, 0])[1])
+        # 읽는 순서 정렬(2단 편집 대응) — 종전 y 단독 정렬은 단을 행 단위로 교차시켰다
+        sorted_blocks = _reading_order(blocks, page.rect.width)
 
         for b in sorted_blocks:
             if b.get("type", 0) != 0:
@@ -135,7 +170,7 @@ def parse_pdf(file_path: Path) -> dict:
                 spans = line.get("spans", [])
                 if not spans:
                     continue
-                line_text = " ".join(s["text"] for s in spans).strip()
+                line_text = _clean_text(" ".join(s["text"] for s in spans)).strip()
                 if _is_junk(line_text):
                     continue
 

@@ -7,15 +7,27 @@ mcp-tool-design §1-4의 2층 평가 중 '크론 가능한 층': LLM 평가(code
 
 exit 0=전부 PASS / 1=회귀 존재 / 2=수집 실패(MCP 미도달)
 사용: python3 tools/mcp_regression.py   (localhost:8403 — 루프백 무제한 티어)
+
+**외부 재현**(2026-08-09, T-2026W32-83): 평가셋이 우리 몫이라면 남이 우리 판정을 되짚을 수
+있어야 한다. 엔드포인트를 바꿔 공개 서버에 그대로 돌릴 수 있다 —
+
+    python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp
+
+주의: 공개 엔드포인트는 무료 IP당 50콜/일 한도가 걸리고 이 스위트가 케이스당 1콜씩
+쓰므로(현재 28콜) 하루 1회가 한계다. 한도를 넘기면 도구가 구조화 오류를 반환해 FAIL이
+아니라 **수집 실패로 보이지 않는 FAIL**이 되니, 판정 전 출력의 오류 메시지를 확인하라.
+사람이 읽는 문항지는 저장소 루트 `evaluation.xml`이다.
 """
 from __future__ import annotations
 
 import json
+import os
+import re
 import sys
 
 import httpx
 
-MCP = "http://localhost:8403/mcp"
+MCP = os.environ.get("CC_MCP_ENDPOINT", "http://localhost:8403/mcp")
 H = {"Content-Type": "application/json",
      "Accept": "application/json, text/event-stream"}
 
@@ -44,7 +56,18 @@ class Session:
         r.raise_for_status()
         line = [l for l in r.text.splitlines() if l.startswith("data:")]
         d = json.loads(line[0][5:]) if line else json.loads(r.text)
-        return json.loads(d["result"]["content"][0]["text"])
+        if "result" not in d:            # JSON-RPC 오류(-32602 등) — 예외로 뭉개지 말고 데이터로
+            err = d.get("error") or {}
+            return {"error": "protocol_error", "code": err.get("code"),
+                    "message": str(err.get("message"))[:500]}
+        text = d["result"]["content"][0]["text"]
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # SDK 인자 스키마 거부(Literal 위반·필수 누락)는 JSON이 아니라 평문으로 온다.
+            # 이것도 정상적인 '거부'이므로 검사 함수가 볼 수 있게 구조화해서 넘긴다 —
+            # 파싱 예외로 죽이면 "조용한 기본값 대신 거부했는가"를 검사할 수 없다.
+            return {"error": "tool_validation_error", "message": text[:500]}
 
 
 CASES = [
@@ -68,7 +91,12 @@ CASES = [
      lambda d: any("수의" in (c.get("method") or "") for c in d.get("candidates", []))),
     ("R6-지명입찰-동의어",       # 지방계약법령 '지명입찰' 용어차 동의어 확장 회귀
      "search_references", {"query": "지자체 용역 지명경쟁 금액", "top_k": 8},
-     lambda d: any("지명입찰" in h.get("excerpt", "") or "제22조" in h.get("excerpt", "")
+     # 2026-08-14: 앵커 검사 범위를 excerpt→excerpt+section으로 넓혔다. 감사원 가이드
+     # 재추출(T-2026W33-173)로 청크 경계가 바뀌자 같은 근거(지방계약법 시행령 제22조)가
+     # **section에 실려** 회수되는데도 거짓 실패했다 — 회수 능력이 아니라 청크 경계라는
+     # 우연한 사실에 검사가 매여 있었던 것이다(R46과 같은 교훈).
+     lambda d: any("지명입찰" in (h.get("excerpt", "") + h.get("section", ""))
+                   or "제22조" in (h.get("excerpt", "") + h.get("section", ""))
                    for h in d.get("hits", []))),
     ("R7-절단-가시화",           # search_law 조용한 절단 금지(total_found·note)
      "search_law", {"query": "수의계약", "top_k": 3},
@@ -78,11 +106,16 @@ CASES = [
      "decide_contract_method",   # 20,000,001→"2,000만원" 반올림) 수리 회귀 — 2026-07-30
      {"contract_type": "service", "estimated_price": 20000001,
       "org_type": "local", "project_name": "회귀검사"},
+     # 검사 범위는 룰 계층(후보·설명·법령 키)만 — R25(2026-08-12)로 조문 본문(articles)이
+     # 배달되면서 지방계약법 시행령 제25조 '원문 자체'가 국가령을 인용하는 게 걸렸는데,
+     # 그건 혼입이 아니라 원문 충실이다(원문 인용을 지우는 쪽이 오히려 왜곡).
      lambda d: (lambda t: "국가계약법" not in t and "국가를 당사자" not in t
                 and "2,000만원" not in t
                 and any((c.get("rule_id") or "").startswith("LOCAL")
                         for c in d.get("candidates", [])))(
-                    json.dumps(d, ensure_ascii=False))),
+                    json.dumps({**d, "laws_applied": [
+                        {"key": l.get("key"), "law_name": l.get("law_name")}
+                        for l in d.get("laws_applied", [])]}, ensure_ascii=False))),
     ("R9-판례본문미제공-가시화",   # 검색엔 뜨나 본문 미제공 판례가 빈 필드로 침묵하던
      "get_case", {"kind": "prec", "case_id": "417684"},   # 결함(배터리 제보) 수리 회귀
      lambda d: d.get("error") == "case_body_unavailable" and "hint" in d),
@@ -156,10 +189,325 @@ CASES = [
      "search_law",               # 조문이 안 잡히고 동음이의 '지적(地籍) 정리'가 상위로
      {"query": "분할발주 금지", "top_k": 5},          # 나왔다 — glossary aliases 회귀
      lambda d: any("제68조" in (h.get("law_ref") or "") for h in d.get("hits", []))),
+    ("R21-무의미질의-0건실토",     # 존재하지 않는 용어에 시맨틱 폴백이 '삭제' 스텁 8건을
+     "search_law",               # 근거처럼 반환했다(T-2026W32-184) — 관련성 하한 미달은
+     {"query": "존재하지않는법률용어_9f7c2a", "top_k": 8},   # 0건 + 재질의 hint여야 한다
+     lambda d: d.get("count") == 0 and not d.get("hits") and "hint" in d),
+    ("R22-삭제조문-표시",         # 삭제 스텁 조문이 경고 없이 정상 조문처럼 나오면
+     "search_law",               # 에이전트가 근거로 인용한다 — note로 삭제 사실 공시
+     {"query": "공유재산법 시행령 제64조", "top_k": 3},
+     lambda d: any("삭제" in (h.get("note") or "")
+                   for h in d.get("hits", []) if "제64조" in (h.get("law_ref") or ""))),
+    ("R23-국가-2천만초과-무조건소액수의금지",  # 국가·공기업 2천만 초과~1억을 가격만 보고
+     "decide_contract_method",   # 소액수의로 판정하던 T-2026W33-58 게이트 — 시행령
+     {"contract_type": "product", "estimated_price": 50000000,   # 제26조①5호가목은 2천만
+      "org_type": "national", "project_name": "회귀검사"},        # 이하만 무조건, 초과는
+     lambda d: (lambda cs: bool(cs)                              # 상대방 요건부다
+                and "경쟁" in (cs[0].get("method") or "")
+                and all(c.get("rule_id") not in ("PRD_005", "SVC_002") for c in cs)
+                and any("요건" in (c.get("notes") or "") for c in cs))(
+                    d.get("candidates", []))),
+    ("R24-국가-소기업요건-수의승격",  # 요건 플래그(is_small_enterprise, 가목3) 충족 시
+     "decide_contract_method",     # 요건부 소액수의가 1순위로 — 게이트만 넣고 요건별
+     {"contract_type": "product", "estimated_price": 80000000,   # 룰을 안 넣으면 이 구간
+      "org_type": "national", "is_small_enterprise": True,       # 후보가 0건이 된다
+      "project_name": "회귀검사"},
+     lambda d: (lambda cs: bool(cs)
+                and cs[0].get("rule_id") == "PRD_NEGO_SMALLBIZ"
+                and "소액수의" in (cs[0].get("method") or ""))(
+                    d.get("candidates", []))),
+    ("R25-조문본문-배달",          # law_pack이 notes를, server.py가 articles를 버려
+     "decide_contract_method",    # 경고가 존재해도 배달되지 않던 결함 — 시행령 제26조
+     {"contract_type": "service", "estimated_price": 50000000,   # 본문(가목3 '소상공인')이
+      "org_type": "national", "project_name": "회귀검사"},        # laws_applied에 실려야
+     lambda d: any("소상공인" in (a.get("body") or "")            # 에이전트가 자력 검증
+                   for l in d.get("laws_applied", [])            # 가능하다
+                   for a in (l.get("articles") or []))),
+    ("R26-1억정확값-요건부수의-1순위",  # 정확히 1억원에서만 1순위가 뒤집히던 결함 —
+     "decide_contract_method",       # 가목3 원문이 '2천만원 초과 1억원 이하'라 1억
+     {"contract_type": "product", "estimated_price": 100000000,   # 정확값도 요건 구간인데
+      "org_type": "national", "is_small_enterprise": True,        # PRD_003B(1억 이상)가
+      "project_name": "회귀검사"},                                  # priority로 1순위를 뺏어
+     lambda d: (lambda cs: bool(cs)                               # 99,999,999원=소액수의,
+                and cs[0].get("rule_id") == "PRD_NEGO_SMALLBIZ"   # 100,000,000원=일반경쟁의
+                and "소액수의" in (cs[0].get("method") or "")       # 1원짜리 불연속이었다
+                # 일반경쟁은 사라지지 않고 2순위 대안으로 남아야 한다
+                and any(c.get("rule_id") == "PRD_003B" for c in cs))(
+                    d.get("candidates", []))),
+    ("R27-코퍼스밖법령-못봄≠없음",   # 이 코퍼스는 공공계약 특화라 민사집행법이 없다.
+     "get_law_article",             # 그런데 "제229조 조문을 찾을 수 없습니다"로 답해
+     {"ref": "민사집행법 제229조"},   # 에이전트가 '그런 조문 없음'으로 읽고 판례 참조조문을
+     lambda d: (d.get("error") == "article_not_found"       # 틀렸다 하거나 자체 지식으로
+                and d.get("law_in_corpus") is False         # 폴백하던 결함(T-2026W33-146).
+                and "민사집행법" in (d.get("message") or "")   # 법령명이 지워지지 않고
+                and len(d.get("corpus_laws") or []) > 0)),  # 조회 가능 법령이 실려야 한다
+    ("R28-없는조문-법령은있음",      # R27의 짝 — 같은 404라도 이건 진짜 부존재다.
+     "get_law_article",            # 두 상황이 같은 문장을 내면 구별이 불가능해진다.
+     {"ref": "국가계약법 시행령 제9999조"},
+     lambda d: (d.get("error") == "article_not_found"
+                and d.get("law_in_corpus") is True
+                and "국가계약법 시행령" in (d.get("message") or ""))),
+    ("R29-공사4억-소액수의-절단금지",  # 노출 상한 3개가 '서로 다른 계약방법 보장'을
+     "decide_contract_method",       # 무력화하던 결함(T-2026W33-158): 매칭 4건 중 3건이
+     {"contract_type": "construction", "estimated_price": 400000000,  # 같은 일반경쟁이라
+      "org_type": "national", "construction_specialty": "general",    # 슬롯을 중복이 채우고
+      "project_name": "회귀검사"},                                      # 유일하게 다른 방법인
+     # 시행령 제26조①5호가목1) 종합공사 4억원 '이하'는 금액만으로 수의 가능 —      # 소액수의
+     # 그 후보가 응답에서 사라지면 적법한 선택지 하나가 통째로 은폐된다.            # (CST_005)가
+     lambda d: any("소액수의" in (c.get("method") or "")                 # priority 200이라
+                   for c in d.get("candidates", []))),                 # 잘려나갔다
+    ("R30-절단-실토",                # 위 상한으로 잘린 후보는 실토해야 한다 — 잘렸다는
+     "decide_contract_method",     # 사실이 없으면 에이전트는 "이 3개가 전부"로 읽는다.
+     {"contract_type": "construction", "estimated_price": 400000000,
+      "org_type": "national", "construction_specialty": "general",
+      "project_name": "회귀검사"},
+     lambda d: (lambda om: isinstance(om, list) and len(om) >= 1
+                and all(o.get("rule_id") and o.get("method") for o in om))(
+                    d.get("omitted_candidates"))),
+    ("R31-top_k-준수",              # search_references가 요청한 top_k의 2배를 반환하던
+     "search_references",          # 결함(T-2026W33-10, 실측 3→6·12→24). 요청과 다른 것을
+     {"query": "적격심사 낙찰하한율 50억 미만", "top_k": 3},  # 주면서 말하지 않는 것은 은폐다.
+     lambda d: len(d.get("hits", [])) <= 3),
+
+    # ── 이행단계 축 Phase 1: 지체상금·지연배상금 (T-2026W33-164, 2026-08-14 신설) ──
+    # 기대 금액은 조문 원문(국가 규칙 제75조·영 제74조 / 지방 규칙 제75조·영 제90조)에서
+    # 산식을 직접 적용해 확정했다. 설계·근거표는 docs/DELAY-PENALTY-AXIS.md.
+    ("R32-지체상금-국가공사-요율",     # 공사 1천분의 0.5 — 10억×30일 = 1,500만원
+     "estimate_delay_penalty",
+     {"contract_kind": "construction", "org_type": "national",
+      "contract_amount": 1000000000, "delay_days": 30},
+     lambda d: d.get("amount") == 15000000 and d.get("term") == "지체상금"
+               and d.get("rate", {}).get("value") == 0.0005),
+    ("R33-지연배상금-지방용역-국가요율금지",  # 지방 용역은 1000분의 1.3 (국가 1.25 아님).
+     "estimate_delay_penalty",             # 이 저장소 재발 결함 계열(R15·R16)의 이행단계판 —
+     {"contract_kind": "service", "org_type": "local",   # 국가 수치가 새어들면 3,750,000이 된다
+      "contract_amount": 100000000, "delay_days": 30},
+     lambda d: d.get("amount") == 3900000 and d.get("term") == "지연배상금"
+               and d.get("rate", {}).get("value") == 0.0013),
+    ("R34-한도30%-실토",             # 한도로 깎았으면 원금액과 함께 말해야 한다(조용한 clamp 금지)
+     "estimate_delay_penalty",
+     {"contract_kind": "construction", "org_type": "national",
+      "contract_amount": 100000000, "delay_days": 700},
+     lambda d: (d.get("amount_raw") == 35000000 and d.get("amount") == 30000000
+                and (d.get("cap") or {}).get("applied") is True
+                and any("한도" in w for w in d.get("warnings", [])))),
+    ("R35-인수분공제+면책일수",       # (10억−4억)×0.0005×(40−10일) = 900만원 (영 제74조②·① 후단)
+     "estimate_delay_penalty",
+     {"contract_kind": "construction", "org_type": "national", "contract_amount": 1000000000,
+      "delay_days": 40, "excluded_days": 10, "accepted_portion_amount": 400000000},
+     lambda d: (d.get("amount") == 9000000
+                and (d.get("base_amount") or {}).get("result") == 600000000
+                and (d.get("counted_days") or {}).get("result") == 30)),
+    ("R36-미선언-경고+지체일수-비확정", # 인수분·면책일수 미선언을 조용히 0으로 쓰지 않는다.
+     "estimate_delay_penalty",         # 지체일수는 사실 판단이라 우리가 정하지 않는다는 실토도 필수
+     {"contract_kind": "construction", "org_type": "national",
+      "contract_amount": 100000000, "delay_days": 10},
+     lambda d: (any("인수분" in w for w in d.get("warnings", []))
+                and any("면책일수" in w for w in d.get("warnings", []))
+                and "사실 판단" in ((d.get("counted_days") or {}).get("disclaimer") or ""))),
+    ("R37-기관유형-추측금지",         # 모르는 기관유형에 국가 요율을 조용히 쓰면 지자체 사용자가
+     "estimate_delay_penalty",       # 틀린 금액을 받고도 모른다 — 계산하지 말고 거부해야 한다.
+     {"contract_kind": "construction", "org_type": "무엇"  # 1차 방어선은 Literal 스키마(SDK가
+      , "contract_amount": 100000000, "delay_days": 10},   # 허용값을 알려주며 거부), 2차는
+     lambda d: ("amount" not in d and d.get("error") in (  # 서비스 계층 unknown_org_type.
+         "unknown_org_type", "tool_validation_error", "protocol_error")
+         and ("national" in (d.get("message") or "") or bool(d.get("hint"))))),
+    ("R38-해석요율-실토",             # 지방 규칙엔 군용 음식료품 호가 없어 제2호로 해석했다.
+     "estimate_delay_penalty",       # 해석을 법문인 척 내면 그것이 은폐다 — inferred로 밝힌다
+     {"contract_kind": "military_food", "org_type": "local",
+      "contract_amount": 100000000, "delay_days": 10},
+     lambda d: ((d.get("rate") or {}).get("inferred") is True
+                and any("해석" in w for w in d.get("warnings", [])))),
+
+    # ── 2026-08-13 codex 탐침 발견 4건 수리 회귀 (T-2026W33-160~163) ──
+    ("R39-top_k-상한-실행가능안내",   # 상한(20)에 닿았는데 "top_k를 올려라"라고 하면
+     "search_law", {"query": "제21조", "top_k": 30},  # 실행 불가능한 행동 지시다. 게다가
+     # 상한 초과 요청을 말없이 깎으면 모델은 30건을 받았다고 믿는다(§12.4 조용한 clamp).
+     lambda d: ((d.get("top_k_applied") or {}).get("requested") == 30
+                and (d.get("top_k_applied") or {}).get("applied") == 20
+                and "올려라" not in (d.get("note") or "")
+                and "상한" in (d.get("note") or ""))),
+    ("R40-법령명생략-추정공시",       # "시행령 제26조"를 국가계약법으로 해석하는 것 자체는
+     "get_law_article", {"ref": "시행령 제26조"},   # 유용하나, 말없이 하면 지방계약 담당자가
+     # 다른 법 조문을 받고도 모른다 — 추정 사실·대안·행동지침을 함께 낸다.
+     lambda d: (isinstance(d.get("assumption"), dict)
+                and d["assumption"].get("resolved_to") == "국가계약법 시행령"
+                and "지방계약법 시행령" in (d["assumption"].get("other_laws_with_same_article") or [])
+                and bool(d["assumption"].get("hint")))),
+    ("R41-정확한참조-추정없음",       # R40의 짝 — 법령명을 정확히 준 호출에 추정 딱지가
+     "get_law_article", {"ref": "국가계약법 시행령 제26조"},  # 붙으면 그것도 거짓말이다.
+     # 개정일자 파손(2011.11.23→2011.23) 회귀도 여기서 같이 잡는다(T-2026W33-162):
+     # 존재할 수 없는 날짜(월>12 또는 일 없는 2요소 날짜)가 개정 표기에 있으면 FAIL.
+     lambda d: (d.get("assumption") is None
+                and not __import__("re").search(
+                    r"<개정[^>]*?\b\d{4}\.\d{1,2}(?![.\d])", d.get("content") or ""))),
+    ("R42-판례-원문링크",            # law.go.kr 실시간 조회인데 출처 링크가 없어 감사·보고서
+     "get_case", {"kind": "prec", "case_id": "204256"},  # 인용에서 근거를 되짚을 수 없었다
+     lambda d: (d.get("source_url", "").startswith("https://www.law.go.kr/")
+                and "204256" in d.get("source_url", ""))),
+
+    # ── 이행단계 축 Phase 2: 면책 사유 갈림길 지도 (T-2026W33-165, 2026-08-14) ──
+    # Phase 1이 "지체일수는 정하지 않는다"고 거부한 자리에 **대신 줄 것**을 놓은 것이라,
+    # 회귀의 초점도 "판정하지 않으면서 길을 주는가"다.
+    ("R43-면책지도-판정거부+확인사실",  # 판정표로 오해되면 이 도구는 위험해진다 — 판정
+     "delay_exemption_guide", {"contract_kind": "construction"},  # 거부 계약과 확인할
+     lambda d: ("판정하지 않는다" in ((d.get("who_decides") or {}).get("tool_contract") or "")
+                and d.get("grounds_count", 0) >= 5   # 사실(must_establish)이 사유마다 있어야
+                and all(g.get("must_establish") for g in d.get("grounds", []))
+                and all(g.get("basis") for g in d.get("grounds", [])))),
+    ("R44-계열밖사유-거부",           # 용역 계약에 공사 전용 사유(설계변경)를 물으면 조용히
+     "delay_exemption_guide",       # 목록을 내주는 대신 거부하고 가능한 사유를 알려준다
+     {"contract_kind": "service", "ground": "design_change"},
+     lambda d: (d.get("error") in ("ground_not_applicable", "backend_error")
+                and "design_change" in (d.get("message") or "") + str(d.get("hint") or ""))),
+    ("R45-SW절반규칙-공시",          # 용역 SW 사유는 **전액이 아니라 1/2만** 불산입이다.
+     "delay_exemption_guide",       # 다른 호와 같이 다루면 계산이 두 배로 틀린다.
+     {"contract_kind": "service", "ground": "sw_requirement_change"},
+     lambda d: (lambda g: bool(g) and "1/2" in (g[0].get("partial") or "")
+                # 회수 인용이 끊긴 항목은 끊겼다고 표시해야 한다(이어 붙이지 않는다)
+                and g[0].get("quote_truncated") is True)(d.get("grounds"))),
+    ("R46-일수계산규칙+선례",        # 사유 목록만으론 부족하다 — 준공검사 기간 불산입·최종
+     "delay_exemption_guide", {"contract_kind": "product_manufacture"},  # 확정 계약금액 기준 같은
+     # 금액 규칙과 회신 선례가 출처와 함께 와야 실무자가 그대로 쓸 수 있다.
+     # 2026-08-14 수정: 종전엔 선례 3건 이상을 요구했는데, 그건 **계열 무관하게 전부
+     # 얹던 결함**(T-2026W33-167)을 기대값으로 박아둔 것이었다 — 물품 계열에 해당하는
+     # 선례는 실제로 1건(최종 확정 계약금액 기준)뿐이다. 건수가 아니라 성질을 검사한다.
+     lambda d: (len(d.get("day_count_rules") or []) >= 4
+                and any("준공검사" in r.get("rule", "") for r in d["day_count_rules"])
+                and (d.get("precedents") or [])
+                and all(p.get("source") and p.get("applies_to") for p in d["precedents"])
+                and all("product" in p["applies_to"] for p in d["precedents"]))),
+
+    # ── 이행단계 축 Phase 3: 물가변동 계약금액 조정 (T-2026W33-166, 2026-08-14) ──
+    ("R47-물가변동-90일경계+산식",   # 90일 '이상'이므로 정확히 90일도 충족. 조정금액·선금
+     "check_price_adjustment",     # 공제 산식(시행규칙 제74조 제5·6항)까지 한 케이스에서 본다
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-04-01",
+      "adjustment_rate_pct": 4.2, "adjustment_base_amount": 1000000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: (d.get("verdict") == "requirements_met"
+                and (d.get("period") or {}).get("elapsed_days") == 90
+                and (d.get("computed") or {}).get("adjustment_amount") == 42000000
+                and ((d.get("computed") or {}).get("advance_deduction") or {}).get("amount") == 12600000
+                and (d.get("computed") or {}).get("net_amount") == 29400000)),
+    ("R48-단품문턱-국가15%",        # 자재 12%는 국가에선 **미달**이다. 지방 문턱(10%)을
+     "check_price_adjustment",     # 국가에 쓰면 없는 권리를 있다고 답하게 된다
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-06-01",
+      "is_construction": True, "single_item_rate_pct": 12,
+      "single_item_share_over_5permille": True},
+     lambda d: ((d.get("single_item") or {}).get("threshold_pct") == 15.0
+                and (d.get("single_item") or {}).get("met") is False)),
+    ("R49-단품문턱-지방10%",        # 같은 12%가 지방에선 충족 — 기관축이 갈리는 지점이라
+     "check_price_adjustment",     # R48과 쌍으로 박는다(이 저장소 재발 결함 계열)
+     {"org_type": "local", "contract_date": "2026-01-01", "check_date": "2026-06-01",
+      "is_construction": True, "single_item_rate_pct": 12,
+      "single_item_share_over_5permille": True},
+     lambda d: ((d.get("single_item") or {}).get("threshold_pct") == 10.0
+                and (d.get("single_item") or {}).get("met") is True)),
+    ("R50-조정률미제공-판정보류",    # 우리는 조정률을 산정하지 못한다 — 모르면 '아니오'가
+     "check_price_adjustment",     # 아니라 '모른다'여야 한다(못 봄 ≠ 없음)
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-06-01"},
+     lambda d: (d.get("verdict") == "undetermined"
+                and (d.get("rate") or {}).get("met") is None
+                and bool((d.get("rate") or {}).get("why_unknown"))
+                and any("산정" in c for c in d.get("cannot_do", [])))),
+    ("R51-90일예외-발주기관인정",    # 천재지변·원자재 급등 예외는 '자동 통과'가 아니다 —
+     "check_price_adjustment",     # 인정 주체가 발주기관임을 함께 말해야 한다
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-03-01",
+      "adjustment_rate_pct": 4.2, "urgent_exception": True},
+     lambda d: (d.get("verdict") == "exception_path"
+                and ((d.get("period") or {}).get("exception") or {}).get("applies") is True
+                and "발주기관" in ((d.get("period") or {}).get("exception") or {}).get("caution", ""))),
+    ("R52-방식-기본값-추정공시",     # 계약서 명시를 모르면 품목조정률이 기본이지만, 그것이
+     "check_price_adjustment",     # 추정이라는 사실을 밝혀야 한다(조용한 기본값 금지)
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-06-01",
+      "adjustment_rate_pct": 3.5},
+     lambda d: ((d.get("method") or {}).get("applied") == "item"
+                and (d.get("method") or {}).get("declared_in_contract") is None
+                and "확인" in ((d.get("method") or {}).get("assumption") or ""))),
+
+    # ── 2026-08-14 codex 탐침(신규 도구 검증 회차) 발견 4건 수리 회귀 (T-2026W33-167) ──
+    ("R53-감액조정-선금공제-미적용",  # 법문은 "산출한 **증가액**에서 공제한다"(영 제64조③).
+     "check_price_adjustment",      # 감액에 공제를 적용하면 감액폭이 줄어 발주기관이 손해다
+     {"org_type": "national", "contract_date": "2026-05-17", "check_date": "2026-08-14",
+      "adjustment_rate_pct": -3, "adjustment_base_amount": 1000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: (lambda c: (c.get("adjustment_amount") == -30000
+                           and "advance_deduction" not in c
+                           and "net_amount" not in c
+                           and bool(c.get("advance_deduction_skipped"))))(d.get("computed") or {})),
+    ("R54-증액조정-선금공제-유지",    # R53의 짝 — 증액에서는 공제가 그대로 살아 있어야 한다
+     "check_price_adjustment",      # (감액 수리가 정상 경로를 죽이지 않았는지)
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-04-01",
+      "adjustment_rate_pct": 4.2, "adjustment_base_amount": 1000000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: ((d.get("computed") or {}).get("net_amount") == 29400000
+                and ((d.get("computed") or {}).get("advance_deduction") or {}).get("amount") == 12600000)),
+    ("R55-지방판정-지방근거인용",     # 지방 판정에 국가 시행규칙 제74조를 근거로 달던 결함 —
+     "check_price_adjustment",     # 이 저장소 재발 계열(R8·R12·R15·R16)의 Phase 3판
+     {"org_type": "local", "contract_date": "2026-05-16", "check_date": "2026-08-14",
+      "adjustment_rate_pct": 3, "adjustment_base_amount": 1000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: (lambda c, lb: ("지방계약법 시행규칙 제72조" in (c.get("legal_basis") or "")
+                               and "국가계약법" not in json.dumps(c, ensure_ascii=False)
+                               and not any("국가계약법" in x for x in lb)))(
+                    d.get("computed") or {}, d.get("legal_basis") or [])),
+    ("R56-시맨틱폴백-실토",          # 키워드 0건인데 의미검색 결과가 count>0으로 나가면
+     "search_law",                 # 무결과가 정상 검색결과로 위장된다
+     {"query": "존재하지않는가상법령조문_987654321", "top_k": 100},
+     lambda d: (d.get("count", 0) == 0 or
+                (d.get("matched_by") == "semantic_fallback"
+                 and "키워드 매치 0건" in (d.get("note_fallback") or "")))),
+    ("R60-추출품질-세정+공시",       # 깨진 PDF 추출본을 검증·경고 없이 '근거'로 내놓던 결함
+     "search_references",          # (T-2026W32-161): 제어문자(BEL)로 시작하는 2단 편집 교차
+     {"query": "낙찰하한율 50억 미만", "top_k": 8},  # 텍스트가 relevance 0.99로 상위에 왔다.
+     # 2026-08-14 재추출(T-2026W33-173) 후 갱신: 종전 이 케이스는 "감사원 히트에 경고가
+     # **있어야** 한다"고 요구했는데, 그건 지혈 상태를 기대값으로 박은 것이었다(R46과 같은
+     # 함정). 지금 지켜야 하는 불변식은 ①제어문자가 응답에 남지 않는다 ②판독 불가 문서는
+     # 오지 않는다 ③경고가 붙었다면 문구가 실려 있다 — 재추출로 경고가 사라져도 통과한다.
+     lambda d: (lambda hits: bool(hits)
+                and not any(re.search("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u200b-\u200f\ufeff]",
+                                      (h.get("excerpt") or "") + (h.get("section") or ""))
+                            for h in hits)
+                and not any("sw_guide" in (h.get("source") or "") for h in hits)
+                and all(h.get("quality_warning") for h in hits
+                        if h.get("extraction_quality") == "two_column_pdf"))(
+                    d.get("hits", []))),
+    ("R58-문화재공사-전용룰-1순위",   # 공용(센티널) 룰이 전용 룰의 1순위를 뺏던 결함
+     "decide_contract_method",       # (T-2026W33-148): 국가 문화재수리 1.8억의 1순위가
+     {"contract_type": "construction", "estimated_price": 180000000,  # CST_FIRE_002(소방)
+      "org_type": "national", "construction_specialty": "cultural_heritage",  # 였다 — 실무자가
+      "project_name": "회귀검사"},   # 소방시설공사업 요건을 문화재수리 요건으로 읽는다
+     lambda d: (lambda cs: bool(cs) and cs[0].get("rule_id") == "CST_HERITAGE_002"
+                # 공용 룰은 금액 근거라 남기되, 남았으면 '업종 요건이 아니다'를 실토해야 한다
+                and all(("공용 룰" in (c.get("notes") or ""))
+                        for c in cs if c.get("rule_id") == "CST_FIRE_002"))(
+                    d.get("candidates", []))),
+    ("R59-소방공사-자기영역-불변",    # R58의 짝 — 강등이 소방공사 질의의 1순위를 깎지 않는다
+     "decide_contract_method",
+     {"contract_type": "construction", "estimated_price": 180000000,
+      "org_type": "national", "construction_specialty": "fire_safety",
+      "project_name": "회귀검사"},
+     lambda d: (lambda cs: bool(cs) and cs[0].get("rule_id") == "CST_FIRE_002"
+                and "공용 룰" not in (cs[0].get("notes") or ""))(d.get("candidates", []))),
+    ("R57-선례-계열밖-미노출",       # 용역 질의에 공사 전용 회신(동절기 공사중지·장기계속
+     "delay_exemption_guide", {"contract_kind": "service"},  # 하자)을 표시 없이 얹지 않는다
+     lambda d: (lambda ids: "winter_suspension" not in ids
+                and "prior_phase_defect" not in ids
+                and "final_amount_basis" in ids)(
+                    [p["id"] for p in d.get("precedents", [])])),
 ]
 
 
 def main() -> int:
+    global MCP
+    argv = sys.argv[1:]
+    if "--endpoint" in argv:
+        i = argv.index("--endpoint")
+        if i + 1 >= len(argv):
+            print("[ERR ] --endpoint 뒤에 URL이 없다")
+            return 2
+        MCP = argv[i + 1]
+    print(f"# 대상 {MCP} · 케이스 {len(CASES)}건")
     try:
         s = Session()
     except Exception as e:  # noqa: BLE001

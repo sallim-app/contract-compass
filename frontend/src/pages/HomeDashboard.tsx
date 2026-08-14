@@ -106,6 +106,25 @@ export default function HomeDashboard({ onDecision, onAsk, onGlossary }: {
             </p>
           </div>
 
+          {/* 가이드 페이지 링크 — 생성 페이지(/g/)로 가는 유일한 사내 진입 경로.
+              sitemap에만 있고 사이트 안에서 아무도 링크하지 않으면 고아 페이지가 되고,
+              크롤러도 사용자도 사실상 도달하지 못한다(2026-08-06 codex 지적). */}
+          <div className="entry" style={{ marginTop: 14 }}>
+            <div className="ehead">
+              <span className="eico" style={{ background: 'var(--violet-tint)', color: 'var(--violet-ink)' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+              </span>
+              <div><h3>공공계약 가이드</h3><div className="ewho">금액구간별 계약방법 · 수의계약 사유 · 용어</div></div>
+            </div>
+            <p>
+              계약유형·기관유형·추정가격 구간별로 적용 가능한 계약방법과 근거 조문을 정리한
+              문서입니다. 판정값은 이 서비스와 같은 룰엔진에서 나옵니다.
+            </p>
+            <p style={{ fontSize: 13 }}>
+              <a href="/g/index.html">가이드 목차 열기 →</a>
+            </p>
+          </div>
+
           <p style={{ marginTop: 18, fontSize: 12, color: 'var(--ink-3)' }}>
             AI는 부정확할 수 있습니다. 중요한 결정 시 법령·실무 기준을 반드시 확인하세요.
           </p>

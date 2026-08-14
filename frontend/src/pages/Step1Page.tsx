@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useWizardStore } from '../store/wizardStore'
 import { filterStep1, suggestContractType, getPossibleMethods, type MatrixMethod } from '../api/client'
 import { saveFavorite, loadFavorites, deleteFavorite } from '../App'
+import { track } from '../lib/track'
 import Icon from '../components/Icon'
 import type { OrgType, ServiceType } from '../types'
 
@@ -151,6 +152,9 @@ export default function Step1Page() {
     }
     setStep1Input(input)
     setStep(2)  // 즉시 이동
+    // 전환 ②: 입력 검증을 통과해 분석에 들어간 순간(= 위저드를 실제로 쓴 사람).
+    // 사업명·사업개요는 자유입력이라 넘기지 않는다 — 분류값만.
+    track('wizard-submit', { contract_type: ctGuess, org_type: orgType })
 
     // 백그라운드 1: LLM contract_type 보강
     suggestContractType(desc)
@@ -171,10 +175,14 @@ export default function Step1Page() {
       .then((result) => {
         setStep1Result(result)
         setSessionId(result.session_id)
+        // 전환 ③: 룰엔진 판정이 실제로 손에 들어온 순간. wizard-submit과의 차이가
+        // 백엔드 실패율이다 — 두 이벤트가 갈라지면 판정 API가 조용히 죽고 있다는 신호.
+        track('wizard-result', { candidates: result.candidates?.length ?? 0 })
       })
       .catch((e: any) => {
         setError(e.response?.data?.detail || '오류가 발생했습니다.')
         setStep(1)
+        track('wizard-error')
       })
       .finally(() => setLoading(false))
   }

@@ -98,18 +98,25 @@ def verify_supabase_jwt(token: str) -> dict | None:
 
 
 def _client_ip(request: Request) -> str:
-    # 신뢰 순서 (contract.naru.build는 Cloudflare proxied — 2026-07-29 실측):
-    # 1) CF-Connecting-IP: CF가 실클라이언트 IP로 덮어씀. 이게 없으면 nginx가 보는
-    #    $remote_addr(X-Real-IP)는 CF 엣지 IP(회전)라 한도가 헛돈다.
-    # 2) X-Real-IP: 우리 nginx가 덮어써 위조 불가 (CF 미경유 직접 접근 시).
-    # 3) XFF 첫 엔트리: 클라이언트 주입 가능(nginx append) — 최후 폴백만.
-    for h in ("cf-connecting-ip", "x-real-ip"):
-        v = request.headers.get(h)
-        if v:
-            return v.strip()
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
+    """쿼터 주체 IP. **X-Real-IP만 신뢰한다.**
+
+    2026-08-04 보안 감사 정정 — 이전 구현은 `CF-Connecting-IP`를 1순위로 무조건
+    신뢰했다. 그 헤더는 CF가 붙일 때만 진짜이고, 오리진 :443이 공인망에 열려 있어
+    **CF를 우회한 직접 접속은 이 헤더를 마음대로 위조**할 수 있었다 → 익명 무료
+    2회/일 한도와 로그인 벽이 비브라우저 클라이언트에게 사실상 없는 것과 같았다.
+
+    같은 감사에서 nginx에 `set_real_ip_from`(CF 대역) + `real_ip_header
+    CF-Connecting-IP`를 넣어 `$remote_addr`가 실 클라이언트가 되게 했고,
+    nginx는 `X-Real-IP $remote_addr`로 이 헤더를 **덮어쓴다**(클라이언트가 무엇을
+    보내든 무시된다). 즉 지금은 X-Real-IP가 유일하게 위조 불가한 값이다.
+    CF 미경유 직결이면 real_ip가 헤더를 무시하므로 진짜 peer가 남는다.
+
+    XFF는 `$proxy_add_x_forwarded_for`(누적)라 앞부분이 클라이언트 제어 — 안 본다.
+    """
+    v = request.headers.get("x-real-ip")
+    if v:
+        return v.strip()
+    # nginx를 안 거친 경로(로컬 스모크 등). 소켓 peer가 유일하게 믿을 값이다.
     return request.client.host if request.client else "unknown"
 
 

@@ -14,7 +14,29 @@ import json
 from pathlib import Path
 from typing import Any
 
+from backend.services.rule_engine import rule_method
+
 _RULES_DIR = Path(__file__).resolve().parent.parent.parent / "rules"
+
+# 국제입찰 임계값(7.1억/265억)은 **공기업·준정부 고시금액**이다. 국가기관·지자체 요청에
+# INTL 계열 룰이 후보로 뜨면 기관유형별로 다르다는 안내를 병기해야 한다
+# (2026-07-29 codex 적대검증에서 나온 규칙).
+# 여기 있는 이유(2026-08-06): 이 문구가 `filter.py` 안에만 있어서 같은 룰을 소비하는
+# 정적 가이드 페이지 생성기가 경고 없이 국가기관 페이지에 공기업 기준을 실었다.
+# 룰을 소비하는 모든 경로가 같은 문구를 쓰도록 진실원을 하나로 둔다.
+INTL_BID_CAVEAT = (
+    "국제입찰 고시금액은 기관유형별로 다릅니다(본 안내는 공기업·준정부 기준). "
+    "국가기관·지자체는 기획재정부 고시금액을 확인하세요."
+)
+
+
+def intl_bid_caveat(org_type: str, rule_ids) -> str:
+    """국제입찰 기관유형 주의문구. 해당 없으면 빈 문자열."""
+    if org_type == "public_corp":
+        return ""
+    if any("INTL" in rid or rid == "PRD_006" for rid in rule_ids):
+        return INTL_BID_CAVEAT
+    return ""
 
 # Load once at module import (즉시 결정론적, 매 호출에 디스크 IO 없음)
 with open(_RULES_DIR / "law_registry.json", encoding="utf-8") as _f:
@@ -174,7 +196,12 @@ def build_decision_pack(
     """
     # 1. 매칭된 룰의 적용 법령 (legal_basis + 방법별 default 법령)
     #    조문 본문은 registry 키로 해석해 붙이고, 사람용 근거 문구는 원문 인용 유지
-    method = (rule.get("result", {}) or {}).get("method", "")
+    # 금액구간별로 방법이 갈리는 룰(`method_by_amount`)은 `result.method`가 없다.
+    # 그걸 그대로 쓰면 method=""가 되어 설명이 "→ **** 1순위 추천"으로 깨지고,
+    # 적용 법령도 방법 기반 default 조문을 못 받는다. 실측(2026-08-06): CST_001은
+    # 50억 이상/100억 이상 두 구간을 method_by_amount로 갖고 있어 70억 종합공사
+    # 판정의 human_explanation에서 계약방법이 통째로 사라졌다.
+    method = (rule.get("result", {}) or {}).get("method") or rule_method(rule, estimated_price)
     _is_local = rule.get("org_type") == "local"
     law_keys = resolve_registry_keys(rule.get("legal_basis"), method,
                                      include_method_defaults=not _is_local)
@@ -312,6 +339,9 @@ def build_decision_pack(
             "conditions": rule.get("conditions", {}),
             "legal_basis_keys": law_keys,
             "result": rule.get("result", {}),
+            # 2026-08-12 R23(T-2026W33-58): 룰 notes(요건 경고)가 decision_pack에 실리지
+            # 않아 LLM·에이전트가 "2천만 초과~1억 요건부" 경고를 받지 못했다 — 배달한다.
+            "notes": rule.get("notes"),
         },
         "human_explanation": human_explanation,
         "laws_applied": laws_applied,

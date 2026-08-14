@@ -4,6 +4,32 @@ from pathlib import Path
 from typing import Any
 
 
+def rule_method(rule: dict, price: int = 0) -> str:
+    """규칙 result에서 금액에 맞는 계약방법 문자열 추출. method_by_amount 지원.
+
+    여기 있는 이유(2026-08-06): 원래 `backend/api/v1/filter.py`의 `_rule_method`였는데,
+    그 모듈을 import하면 chromadb·numpy까지 끌려온다(2,333 모듈). 룰 결과에서 값을
+    끌어내는 순수 함수를 무거운 API 모듈에 두면 **룰만 필요한 소비자**(정적 페이지
+    생성기, 경량 CI 테스트)가 그 값을 재구현하게 되고, 그 사본이 다음 개정에서
+    본선과 갈린다 — `pass_score_ref` 단일화(8151f15)와 같은 이유로 사본을 만들지
+    않는다. filter.py는 이 함수를 alias로 그대로 쓴다(호출부 무변경).
+    """
+    result = rule.get("result", {})
+    if "method" in result:
+        return result["method"]
+    method_map = result.get("method_by_amount", {})
+    if method_map:
+        tiers = sorted(
+            ((int(k.split("_", 1)[1]), v) for k, v in method_map.items()),
+            reverse=True,
+        )
+        for threshold, method in tiers:
+            if price >= threshold:
+                return method
+        return tiers[-1][1] if tiers else "미확정"
+    return "미확정"
+
+
 class RuleEngine:
     def __init__(self, rules_path: str):
         self._path = Path(rules_path)
@@ -17,6 +43,30 @@ class RuleEngine:
     @property
     def thresholds(self) -> dict:
         return self._data.get("thresholds", {})
+
+    # 공용(센티널) 룰이 대신 받는 전문분야 집합 — _check_conditions와 아래 판별기가 공유한다.
+    _PRO_GROUP = {"ground_paving", "interior", "metal_window_roof", "painting_waterproof",
+                  "landscape", "steel_structure", "underwater_dredging", "elevator",
+                  "mechanical", "gas_heating", "water_sewer", "boring_grouting",
+                  "railway", "facility_maintenance"}
+    _LEGAL_GROUP = {"fire_safety", "cultural_heritage", "other"}
+
+    def _specialty_match_kind(self, rule: dict, params: dict) -> str | None:
+        """이 룰이 전문분야를 **정확히** 물었나, 공용(센티널) 룰로 대신 받았나.
+
+        2026-08-14 T-2026W33-148: `fire_safety` 룰이 '그 밖의 공사(법령공사)' 금액 기준
+        공용 룰을 겸하는데, 그 때문에 문화재수리공사 질의가 CST_HERITAGE_002(정확 일치)와
+        CST_FIRE_002(센티널)에 **동시에** 매칭됐다. 둘은 priority가 같아(115) 파일 순서로
+        소방 룰이 1순위를 가져갔고, 실무자는 **소방시설공사업 요건**을 문화재수리공사의
+        요건으로 읽게 됐다(기치 ① 도메인 사실 정확성 위반, 라이브 실측).
+        금액 구간 판정에는 공용 룰이 맞으므로 후보에서 지우지는 않고, **정확 일치 룰보다
+        뒤로** 보낸다(아래 _sort_key).
+        """
+        val = (rule.get("conditions") or {}).get("construction_specialty")
+        if val is None:
+            return None
+        p_spec = params.get("construction_specialty")
+        return "exact" if p_spec == val else "sentinel"
 
     def match(self, params: dict, org_type: str = "public_corp") -> list[dict]:
         """입력 파라미터에 맞는 규칙을 우선순위 순으로 반환.
@@ -40,10 +90,78 @@ class RuleEngine:
             if rule_ct != "public_procurement" and input_ct and rule_ct != input_ct:
                 continue
             if self._check_conditions(rule.get("conditions", {}), params):
-                matched.append(rule)
-        # priority 값이 낮을수록 더 구체적인 규칙 (높은 우선순위)
-        matched.sort(key=lambda r: r.get("priority", 999))
-        return matched
+                kind = self._specialty_match_kind(rule, params)
+                matched.append({**rule, "_specialty_match": kind} if kind else rule)
+        ordered = self._order_matched(matched, params.get("estimated_price", 0))
+        # 최종 순서를 값으로 박아 하위 소비자(api/v1/filter.py)가 재정렬해도 유지되게 한다 —
+        # priority만 다시 읽으면 여기서 한 보정(경계·센티널)이 되돌아간다.
+        return [{**r, "_order_rank": i} for i, r in enumerate(ordered)]
+
+    # 경계에서 새로 열리는 룰을 '이하' 룰 바로 뒤로 보낼 때 쓰는 증분 —
+    # 정수 priority 사이에 끼우기만 하면 되므로 값 자체엔 의미가 없다.
+    _BOUNDARY_EPSILON = 0.5
+
+    def _sort_key(self, rule: dict) -> tuple:
+        """정렬 우선순위: ①전문분야 정확 일치 먼저 ②경계 보정 priority ③원 priority.
+
+        센티널(공용 룰) 강등이 ①이다 — 전용 룰이 있는 전문분야에서 공용 룰이 1순위를
+        가져가면 잘못된 업종 요건을 제시한다(T-2026W33-148). 전용 룰이 없는 전문분야
+        (other 등)는 전부 센티널이라 상대 순서가 그대로다.
+        """
+        return (1 if rule.get("_specialty_match") == "sentinel" else 0,
+                rule.get("_effective_priority", rule.get("priority", 999)),
+                rule.get("priority", 999))
+
+    def _order_matched(self, matched: list[dict], price: int) -> list[dict]:
+        """priority 순 정렬 — 단, `boundary_inclusive_rank` 룰의 상한 경계에서 순위 역전을 막는다.
+
+        법문에서 수의계약 상한은 '…이하'라 **경계 정확값도 그 목의 구간**이다
+        (국가계약법 시행령 제26조①5호가목3)~5) 2천만원 초과 **1억원 이하**,
+        가목7) 5천만원 이하). 그런데 경쟁 룰은 같은 경계에서 '이상'(_gte)으로 열리므로
+        **정확히 그 한 점에서만** 두 룰이 겹치고, 경쟁 룰의 priority가 더 앞서면
+        1순위가 뒤집힌다 — 소기업·소상공인 요건을 선언한 국가 물품 건이
+        99,999,999원엔 소액수의(PRD_NEGO_SMALLBIZ), 100,000,000원엔 일반경쟁
+        (PRD_003B)이 되는 1원짜리 불연속(2026-08-13 T-2026W33-99 본선 재현).
+
+        경계 직전에는 존재하지도 않던(그 점에서 비로소 열리는) 룰이, 그 점까지
+        이어져 온 '이하' 룰을 1순위에서 밀어내지 못하게 한다. 즉 **경계 정확값의
+        순위 = 경계 직전의 순위 + 새로 열린 룰들(뒤에 이어붙임)**. 구간을 걸쳐
+        있는(경계에서 열리지 않는) 룰은 손대지 않으므로, 5천만원처럼 진짜 구간이
+        시작하는 경계에서 SVC_IT_002(정보화사업 5천만~2.3억) 같은 룰이 밀리는
+        부작용은 없다.
+
+        **옵트인인 이유**: 상한이 '이하'인 룰은 공사 소액수의(CST_005·CST_ELEC_003
+        등)에도 있지만, 그쪽은 금액만으로 매칭되는 재량 사유(가목1)라 경계
+        정확값에서 경쟁을 1순위로 두는 규약이 이미 검토·고정돼 있다
+        (tests/scenarios_public.json '전기공사 1.6억 경계'). 반면 가목3)~5)7)은
+        사용자가 **상대방 요건을 선언했을 때만** 매칭되므로, 요건을 선언한 건에
+        요건부 수의를 1순위로 주는 것이 경계 직전과 일관된다. 그래서 전역 규칙이
+        아니라 룰이 `boundary_inclusive_rank: true`로 선언한 경우에만 적용한다.
+
+        보정된 룰에는 `_effective_priority`를 붙인 얕은 사본을 반환한다(원본 룰
+        딕셔너리는 self._data 공유물이라 변형 금지). 하위에서 priority로 재정렬하는
+        소비자(`api/v1/filter.py`)는 이 키를 우선 읽어야 순서가 유지된다.
+        """
+        # 상한이 경계 정확값인 옵트인 룰 — 없으면 경계가 아니므로 아무것도 안 바뀐다
+        closing = [r for r in matched
+                   if r.get("boundary_inclusive_rank")
+                   and r.get("conditions", {}).get("estimated_price_lte") == price]
+        if not closing:
+            return sorted(matched, key=self._sort_key)
+
+        floor = min(r.get("priority", 999) for r in closing)
+        adjusted = []
+        for rule in matched:
+            cond = rule.get("conditions", {})
+            prio = rule.get("priority", 999)
+            opens_here = (cond.get("estimated_price_gte") == price
+                          and cond.get("estimated_price_lte") != price)
+            if opens_here and prio <= floor:
+                rule = {**rule, "_effective_priority": floor + self._BOUNDARY_EPSILON}
+            adjusted.append(rule)
+        # 2차 키(원 priority)로 보정된 룰들끼리의 상대 순서를 유지
+        adjusted.sort(key=self._sort_key)
+        return adjusted
 
     def _check_conditions(self, conditions: dict, params: dict) -> bool:
         price = params.get("estimated_price", 0)
@@ -142,12 +260,8 @@ class RuleEngine:
                 # 전문 14종이 1.6억 룰(CST_ELEC_*)에, 전기공사가 2억 룰(LOCAL_*_PRO)에
                 # 양방향 오판정됐다. 법령공사 그룹(other 포함)은 fire_safety 룰 재사용.
                 p_spec = params.get("construction_specialty")
-                PRO_GROUP = {"ground_paving", "interior",
-                             "metal_window_roof", "painting_waterproof", "landscape",
-                             "steel_structure", "underwater_dredging", "elevator",
-                             "mechanical", "gas_heating", "water_sewer",
-                             "boring_grouting", "railway", "facility_maintenance"}
-                LEGAL_GROUP = {"fire_safety", "cultural_heritage", "other"}
+                PRO_GROUP = self._PRO_GROUP
+                LEGAL_GROUP = self._LEGAL_GROUP
                 if p_spec == val:
                     pass  # 정확 일치
                 elif val == "professional_generic" and p_spec in PRO_GROUP:
@@ -167,13 +281,35 @@ class RuleEngine:
                     return False
         return True
 
+    def _resolve_pass_score_ref(self, result: dict) -> dict | None:
+        """`pass_score_ref`(다른 룰의 rule_id)가 있으면 그 룰의 구간표를 빌려 온다.
+
+        왜 참조인가 (2026-08-05 P0 수리): 같은 낙찰하한율을 **두 룰이 각자 들고 있었다.**
+        CST_001은 금액 구간별 5단 표(50억↑ 87.495% / 10억↑ 88.745% / 3억↑ 89.745%)를
+        갖는데, CST_007은 같은 4억~100억 구간을 **단일 상수 89.745%** 하나로 덮었다.
+        구간마다 바뀌는 값을 평률로 덮었으니 구조적으로 틀릴 수밖에 없다 — 70억 종합공사
+        한 번의 질의에 87.495%(CST_001)와 89.745%(CST_007)가 **같은 응답 안에** 함께 나왔고,
+        2.25%p면 투찰 하한이 1.58억 어긋난다. 투찰은 되돌릴 수 없다.
+
+        값을 복사해 맞추면 지금은 같아지지만 다음 개정에서 또 갈린다. 사본을 늘리는 대신
+        **진실원을 하나로 만든다** — 요율이 바뀌면 고칠 곳이 한 군데다.
+        """
+        ref = result.get("pass_score_ref")
+        if not ref:
+            return None
+        for r in self._data.get("rules", []):
+            if r.get("rule_id") == ref:
+                return (r.get("result", {}) or {}).get("pass_score_by_amount")
+        return None
+
     def get_pass_score(self, rule: dict, price: int) -> dict[str, Any]:
         """규칙에서 금액별 적격심사 점수 및 낙찰하한율 계산.
 
         pass_score_by_amount 키 형식: "gte_<정수>" — 값이 큰 구간부터 매칭.
+        `pass_score_ref`가 있으면 참조 룰의 구간표를 쓴다(요율 진실원 단일화).
         """
         result = rule.get("result", {})
-        pass_score_map = result.get("pass_score_by_amount")
+        pass_score_map = result.get("pass_score_by_amount") or self._resolve_pass_score_ref(result)
 
         if pass_score_map:
             # 키("gte_N")를 숫자로 파싱, 내림차순 정렬

@@ -1,5 +1,6 @@
 """법령 조문 원문 조회 — 법령 조문 컬렉션에서 단일 조문 조회."""
 import re
+from datetime import datetime
 from functools import lru_cache
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from pydantic import BaseModel
@@ -41,6 +42,11 @@ class LawArticleResponse(BaseModel):
     law_ref: str
     # 법률 자체의 미정비 상호인용 경고(원문은 그대로) — 없으면 빈 리스트
     notes: list[dict] = []
+    # 2026-08-14 T-2026W33-161: 법령명을 생략한 참조("시행령 제26조")를 국가계약법으로
+    # 해석했을 때 **그 해석을 밝힌다**. 종전엔 조용히 폴백해서, 지방계약 담당자가
+    # 지방계약법 시행령 제26조를 물어도 국가 조문을 받고 그 사실을 알 길이 없었다.
+    # 해석이 없었으면(정확한 법령명을 준 호출) 이 필드는 없다.
+    assumption: dict | None = None
 
 
 class LawSearchHit(BaseModel):
@@ -49,12 +55,24 @@ class LawSearchHit(BaseModel):
     content: str
     snippet: str
     law_ref: str
+    # 삭제·폐지 조문 경고(T-2026W32-184) — 스텁이면 인용 금지 안내, 아니면 생략
+    note: str | None = None
+    # 시맨틱 폴백 산출 표시 — 키워드 매치가 아님을 에이전트에게 공시
+    matched_by: str | None = None
 
 
 # 원문 청크의 항·호·목 표지 중복 아티팩트("① ①", "3. 3.", "가. 가.") 정규화.
 # 색인 시점 파싱 잔재 — 재색인 없이도 API 반환 시점에 정리한다.
+#
+# 2026-08-14 T-2026W33-162: 숫자 표지 규칙이 **개정일자를 먹고 있었다**(codex 탐침).
+# "2011.11.23"에는 "11."이 두 번 이어 나오므로 중복 표지로 오인돼 "2011.23"이 됐고,
+# "1999.9.9"는 "1999.9"가 됐다 — 원문 XML은 멀쩡한데(실측) 반환 시점에 망가진 것이라
+# 조문 본문은 정상인데 개정 이력만 존재할 수 없는 날짜가 됐다(감사 자료 인용 불가).
+# 표지는 줄머리나 공백 뒤에 오고 날짜는 숫자·점 뒤에 붙는다 — 그 경계로 가른다.
 _DUP_MARKER_RE = re.compile(
-    r"([①-⑳])\s*\1|(\d{1,2}\.)\s*\2|([가-힣]\.)\s*\3"
+    r"([①-⑳])\s*\1"
+    r"|(?<![\d.])(\d{1,2}\.)\s*\2(?!\d)"
+    r"|([가-힣]\.)\s*\3"
 )
 
 
@@ -99,6 +117,111 @@ def _keyword_tokens(keyword: str) -> list[str]:
     return tokens
 
 
+# 시맨틱 폴백 관련성 하한 (T-2026W32-184) — 코사인 거리(0~2)가 이보다 멀면 버린다.
+# 근거 실측(2026-08-09, MiniLM 384d): 관련 질의 0.70~0.81 / 역외 0.92+ / 무의미 1.01+.
+_SEMANTIC_MAX_DIST = 0.90
+
+# 삭제 스텁 조문 판정 (T-2026W32-184) — 제목 줄을 뺀 본문이 "삭제 <YYYY.M.D>"뿐인 청크.
+# 조·항 표지("제64조", "② ②", "3.")가 앞에 붙는 변형을 전부 흡수한다(코퍼스 실측).
+_DELETED_STUB_RE = re.compile(
+    r"^(?:(?:제\d+조(?:의\d+)?|[①-⑳]|\d{1,2}\.)\s*)*삭제\s*<\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?>$"
+)
+
+
+def _deleted_note(doc: str) -> str | None:
+    """삭제·폐지 스텁이면 인용 금지 경고문, 아니면 None — 모든 검색 경로 공통."""
+    body = (doc.split("\n", 1)[1] if "\n" in doc else doc).strip()
+    body = re.sub(r"\s+", " ", body)
+    if _DELETED_STUB_RE.match(body):
+        return "삭제된 조문 — 현행 법령에 규정이 없다. 판단 근거로 인용하지 말 것."
+    return None
+
+
+# ── 조문 미발견 응답 (T-2026W33-146) ────────────────────────────────────────
+# 기치② "못 봄 ≠ 없음": 이 코퍼스는 공공계약 특화라 민사집행법 같은 법령은 애초에
+# 담고 있지 않다. 그런데 "제229조 조문을 찾을 수 없습니다"처럼 답하면 에이전트는
+# **그런 조문이 없다**고 읽고 판례 참조조문을 틀렸다고 말하거나 자체 지식으로
+# 조용히 폴백한다(2026-08-14 Claude 탐침 실측). 코퍼스 밖 법령과 없는 조문을
+# 서로 다른 메시지로 갈라내고, 법령명을 지우지 않는다.
+@lru_cache(maxsize=1)
+def _corpus_law_names() -> tuple[str, ...]:
+    """코퍼스에 실재하는 법령명 목록 — 메타데이터 전수 1회 스캔 후 프로세스 캐시."""
+    try:
+        metas = _get_collection().get(include=["metadatas"]).get("metadatas") or []
+    except Exception:  # noqa: BLE001 — 목록 산출 실패가 404 응답 자체를 막지 않게
+        return ()
+    return tuple(sorted({(m.get("law_name") or "").strip() for m in metas if m.get("law_name")}))
+
+
+def _corpus_name_keys() -> set[str]:
+    """코퍼스 법령명의 비교용 키 집합(약칭·정식명 양쪽, 공백·중점 제거)."""
+    from backend.config import BASE_DIR
+    from backend.services.law_history import _cached_name_map, norm_name
+    name_map = _cached_name_map(str(BASE_DIR / "tools" / "laws"))
+    keys: set[str] = set()
+    for n in _corpus_law_names():
+        keys.add(norm_name(n))
+        keys.add(norm_name(name_map.get(norm_name(n), n)))
+    return keys
+
+
+def _law_in_corpus(target_law: str) -> bool:
+    """사용자가 부른 법령명이 코퍼스에 있는가 — 약칭·정식명·표기 흔들림 흡수."""
+    if not target_law:
+        return False
+    from backend.config import BASE_DIR
+    from backend.services.law_history import _cached_name_map, norm_name
+    name_map = _cached_name_map(str(BASE_DIR / "tools" / "laws"))
+    q = norm_name(target_law)
+    keys = _corpus_name_keys()
+    return q in keys or norm_name(name_map.get(q, target_law)) in keys
+
+
+def _article_not_found(ref: str, article: str, target_law: str,
+                       also_in: list[str] | None = None) -> HTTPException:
+    """조문 미발견 404 — 코퍼스 밖 법령(모름)과 없는 조문(부존재)을 분리해 알린다.
+
+    also_in: 그 조문번호를 가진 **다른** 법령들(있으면 재질의 단서로 실어 보낸다).
+    """
+    in_corpus = _law_in_corpus(target_law)
+    laws = list(_corpus_law_names())
+    if target_law and not in_corpus:
+        message = (f"'{ref}'을(를) 조회하지 못했습니다 — '{target_law}'은(는) 이 서버 코퍼스에 "
+                   f"없는 법령입니다(공공계약 특화 코퍼스, 법령 {len(laws)}건). "
+                   f"{article}이(가) 존재하지 않는다는 뜻이 아닙니다.")
+        hint = (f"**'{article}'이 없다고 말하지 마라** — 우리가 안 가지고 있을 뿐이다. "
+                f"'{target_law}'은 이 코퍼스 범위 밖임을 사용자에게 밝히고, 조문 원문이 필요하면 "
+                f"get_law_article_asof(코퍼스 밖 법령도 law.go.kr 연혁에서 직접 조회한다) 또는 "
+                f"law.go.kr을 안내하라. 판례 참조조문 교차확인 중이었다면 그 참조조문이 "
+                f"틀렸다고 판단하지 말 것.")
+    elif target_law:
+        message = (f"'{ref}'을(를) 조회하지 못했습니다 — '{target_law}'은(는) 코퍼스에 있으나 "
+                   f"{article}은(는) 없습니다.")
+        hint = (f"법령명은 맞으니 조문번호를 확인하라. search_law로 '{target_law}'의 관련 조문을 "
+                f"검색하거나, 개정으로 조문번호가 바뀌었을 수 있으니 get_law_article_asof로 "
+                f"당시 시점을 조회하라.")
+    else:
+        message = (f"'{ref}'에서 법령명을 식별하지 못했습니다 — {article}만으로는 어느 법령의 "
+                   f"조문인지 특정할 수 없습니다.")
+        hint = ("법령명을 붙여 다시 호출하라(예: '국가계약법 시행령 제26조'). "
+                "corpus_laws에 조회 가능한 법령명이 들어 있다.")
+    others = [n for n in (also_in or []) if n]
+    if others:
+        uniq = sorted(set(others))
+        message += f" (같은 조문번호를 가진 코퍼스 법령: {', '.join(uniq)})"
+    return HTTPException(404, {
+        "error": "article_not_found" if target_law else "law_not_specified",
+        "message": message,
+        "ref": ref,
+        "law_name": target_law,
+        "article": article,
+        "law_in_corpus": in_corpus,
+        "hint": hint,
+        "article_found_in_other_laws": sorted(set(others)),
+        "corpus_laws": laws,
+    })
+
+
 def _make_snippet(text: str, q: str, around: int = 80) -> str:
     idx = text.find(q)
     if idx < 0:
@@ -120,6 +243,8 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
 
     law_part = ref[: article_match.start()].strip().rstrip("ㆍ·,")
     target_law = _LAW_ALIASES.get(law_part, law_part) if law_part else ""
+    # 별칭으로 법령을 **우리가 골랐는지** 기억해 둔다(아래 assumption 공시용).
+    alias_resolved = bool(law_part) and target_law != law_part
 
     col = _get_collection()
     results = col.get(
@@ -128,11 +253,13 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
     )
     docs = results.get("documents") or []
     metas = results.get("metadatas") or []
+    # 조문번호가 코퍼스 어디에도 없을 때 — 갈림길은 "그 번호가 아무 법령에나 있느냐"가
+    # 아니라 "사용자가 부른 법령을 우리가 갖고 있느냐"다(T-2026W33-146).
     if not docs:
-        raise HTTPException(404, f"{article} 조문을 찾을 수 없습니다")
+        raise _article_not_found(ref, article, target_law)
 
     if not target_law:
-        raise HTTPException(404, "법령명을 식별할 수 없습니다 (예: '시행령 제30조')")
+        raise _article_not_found(ref, article, "")
 
     # 1단계: law_name 정확 일치
     best = None
@@ -154,7 +281,8 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
                 break
 
     if best is None:
-        raise HTTPException(404, f"{ref!r}에 해당하는 조문을 찾을 수 없습니다 (검색된 법령: {[m.get('law_name') for m in metas]})")
+        raise _article_not_found(ref, article, target_law,
+                                 also_in=[m.get("law_name") or "" for m in metas])
 
     doc, meta = best
     # 긴 조문은 색인 시 parent가 2,000자에서 잘려 저장됨 — 자식 청크(항 단위)를
@@ -182,12 +310,29 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
         except Exception:
             pass  # 조립 실패 시 parent 축약본이라도 반환
     cleaned = _clean_markers(doc)
+    assumption = None
+    if alias_resolved:
+        # 같은 조문번호를 가진 다른 법령 중 **같은 종류**만 — 사용자가 '시행령'이라 했으면
+        # 시행령끼리가 후보다. 전부 나열하면(제26조를 가진 법령 20여 건) 정작 봐야 할
+        # 지방계약법 시행령이 소음에 묻힌다.
+        chosen = meta.get("law_name", "")
+        others = sorted(n for n in {(m.get("law_name") or "") for m in metas} - {chosen, ""}
+                        if n.endswith(law_part))
+        assumption = {
+            "input": law_part,
+            "resolved_to": chosen,
+            "reason": f"법령명이 생략돼 '{law_part}'을(를) 국가계약법 기준으로 해석했다.",
+            "other_laws_with_same_article": others,
+            "hint": (f"지방계약·다른 법령을 물었다면 법령명을 붙여 다시 호출하라"
+                     f"(예: '지방계약법 {article}'). 사용자에게 어느 법령 기준인지 밝혀라."),
+        }
     return LawArticleResponse(
         law_name=meta.get("law_name", ""),
         article=article,
         content=cleaned,
         law_ref=meta.get("law_ref", ""),
         notes=detect_crossref_anomalies(cleaned),
+        assumption=assumption,
     )
 
 
@@ -254,6 +399,12 @@ def get_article_asof(
     limiter.record(limiter.check(request, LIMITS_LLM))
 
     as_of = date.replace("-", "")
+    # 정규식은 자릿수만 본다 — 2026-01-32·2024-02-30 같은 달력상 없는 날짜가 통과하면
+    # pick_asof의 문자열 비교가 엉뚱한 시행판을 조용히 고른다(행위시법 오적용).
+    try:
+        datetime.strptime(as_of, "%Y%m%d")
+    except ValueError:
+        raise HTTPException(422, f"'{date}'는 달력에 없는 날짜입니다 (YYYY-MM-DD 형식의 실재 날짜로 지정하십시오)")
 
     article_match = re.search(r"제\d+조(?:의\d+)?", ref)
     if not article_match:
@@ -337,7 +488,12 @@ def search_references(
     # 후보를 넓게 뽑아 rerank로 좁힌다. rerank 무산출이면 순서는 기존과 동일하되
     # 그 사실을 응답에 드러낸다(폴백 은폐 금지 — 이 저장소의 기존 원칙).
     from backend.services import reranker
-    _want = top_k * 2
+    # 2026-08-14 T-2026W33-10: 종전엔 `_want = top_k * 2`로 **요청한 건수의 2배**를
+    # 반환했다(실측 3→6, 12→24). rerank 후보 풀을 넓히려던 값이 최종 반환 슬라이스에
+    # 그대로 쓰인 것 — 요청과 다른 것을 주면서 말하지 않는 것이 이 저장소가 금지하는
+    # 폴백 은폐다(문서상 상한 12가 실제로는 24, 클라이언트 컨텍스트 예산 2배 소모).
+    # 후보 풀(_pool)은 그대로 넓게 두고 **반환만 top_k로 지킨다**.
+    _want = top_k
     # rerank가 있으면 후보 풀을 넓혀도 비용은 호출 1회로 같다 — 좁은 풀에서는 정답 청크가
     # 애초에 회수되지 않아 재정렬로도 못 살린다(예: '분할발주 금지'의 시행령 제68조).
     _pool = 28 if reranker.is_available() else max(top_k, 12)
@@ -382,12 +538,24 @@ def search_references(
             "relevance": (round(float(c["_rerank_score"]), 3) if c.get("_rerank_score") is not None
                           else round(float(c.get("relevance_score") or 0), 3)),
             "ranked_by": "rerank" if c.get("_rerank_score") is not None else "hybrid_rrf",
+            # 2026-08-14 T-2026W32-161: 추출이 손상된 원본은 그 사실을 히트에 실어 보낸다 —
+            # 읽을 수 없는 텍스트를 '근거'로 제시하는 것이 이 저장소가 금지하는 은폐다.
+            # 판독 불가 문서(SW 가이드)는 rag_service._quality_gate가 애초에 뺀다.
+            **({"extraction_quality": c["extraction_quality"]}
+               if c.get("extraction_quality") else {}),
+            **({"quality_warning": c["quality_warning"]} if c.get("quality_warning") else {}),
         }
 
-    return [_row(c) for c in chunks[:_want]]
+    rows = [_row(c) for c in chunks[:_want]]
+    # 품질 게이트가 버린 문서가 있으면 공시 — 검색에 걸렸는데 우리가 판독을 못 해 뺀 것과,
+    # 애초에 그런 자료가 없는 것은 다르다(T-2026W32-161).
+    dropped = next((c.get("_gate_dropped") for c in chunks if c.get("_gate_dropped")), None)
+    if dropped and rows:
+        rows[0] = {**rows[0], "excluded_sources": dropped}
+    return rows
 
 
-@router.get("/search", response_model=list[LawSearchHit])
+@router.get("/search", response_model=list[LawSearchHit], response_model_exclude_none=True)
 def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSearchHit]:
     """법령 키워드 또는 조문번호로 조문 검색.
 
@@ -428,6 +596,7 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                 content=_clean_markers(doc),
                 snippet=_clean_markers(_make_snippet(doc, keyword or article)),
                 law_ref=law_ref,
+                note=_deleted_note(doc),
             ))
 
     # 2. 키워드 본문 substring 검색 (조문번호 없거나 추가 결과)
@@ -453,6 +622,7 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                     content=_clean_markers(doc),
                     snippet=_clean_markers(_make_snippet(doc, variant)),
                     law_ref=law_ref,
+                    note=_deleted_note(doc),
                 ))
                 if len(results) >= 30:
                     break
@@ -491,20 +661,32 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                 content=_clean_markers(doc),
                 snippet=_clean_markers(_make_snippet(doc, hit_token)),
                 law_ref=law_ref,
+                note=_deleted_note(doc),
             ))
             if len(results) >= 30:
                 break
 
-    # 4. 시맨틱 폴백 (Gemini 임베딩) — substring이 전혀 안 걸리는 자연어 질의 구제.
+    # 4. 시맨틱 폴백 — substring이 전혀 안 걸리는 자연어 질의 구제.
     #    임베딩 호출 실패(쿼터 등)는 조용히 빈 결과 유지(검색 기능 자체는 죽이지 않음).
+    #    T-2026W32-184: 무의미 질의('존재하지않는법률용어_9f7c2a')에 최근접 8건이
+    #    전부 '삭제 <날짜>' 스텁으로 채워져 근거처럼 반환되던 결함 —
+    #    (a) 삭제 스텁은 후보에서 제외(짧은 스텁이 임베딩 허브가 돼 상위 독식,
+    #        구어체 질의 top-20의 17~19건이 스텁이었던 실측),
+    #    (b) 거리 하한 미달이면 0건으로 실토. 임계 0.90은 2026-08-09 실측 근거:
+    #        관련 질의 0.70~0.81 / 역외('블록체인 가스비') 0.92+ / 무의미 1.01+.
     if not results and keyword:
         try:
             qr = col.query(
-                query_texts=[keyword], n_results=8,
-                include=["documents", "metadatas"],
+                query_texts=[keyword], n_results=20,
+                include=["documents", "metadatas", "distances"],
             )
-            for doc, meta in zip((qr.get("documents") or [[]])[0],
-                                 (qr.get("metadatas") or [[]])[0]):
+            for doc, meta, dist in zip((qr.get("documents") or [[]])[0],
+                                       (qr.get("metadatas") or [[]])[0],
+                                       (qr.get("distances") or [[]])[0]):
+                if dist is not None and dist > _SEMANTIC_MAX_DIST:
+                    break  # 거리 오름차순 — 이후는 전부 하한 미달
+                if _deleted_note(doc):
+                    continue  # 삭제 스텁은 시맨틱 근거가 될 수 없다
                 law_ref = meta.get("law_ref") or ""
                 if law_ref in seen_refs:
                     continue
@@ -515,7 +697,10 @@ def search_law(q: str = Query(..., min_length=1, max_length=200)) -> list[LawSea
                     content=_clean_markers(doc),
                     snippet=_clean_markers(_make_snippet(doc, keyword)),
                     law_ref=law_ref,
+                    matched_by="semantic",
                 ))
+                if len(results) >= 8:
+                    break
         except Exception:  # noqa: BLE001 — 임베딩 장애 시 키워드 결과만으로 동작
             pass
 
@@ -547,6 +732,21 @@ def _drf_get(path: str, params: dict) -> str:
         raise HTTPException(502, f"law.go.kr 조회 실패: {type(exc).__name__}")
 
 
+# 판례·해석례 원문 링크 (T-2026W33-163, 2026-08-14 실측 200 확인).
+# 기치②: 근거를 인용하려면 수요자가 원문을 되짚을 수 있어야 한다. law.go.kr 실시간
+# 조회인데 응답에 출처 링크가 없어 감사·보고서 인용에서 출처를 달 수 없었다.
+# DRF API URL(lawService.do)은 우리 OC 키가 노출되므로 쓰지 않는다 — 공개 뷰어 주소만.
+_CASE_URL = {
+    "prec": "https://www.law.go.kr/LSW/precInfoP.do?precSeq={id}",
+    "expc": "https://www.law.go.kr/LSW/expcInfoP.do?expcSeq={id}",
+}
+
+
+def _case_url(kind: str, case_id: str) -> str | None:
+    tmpl = _CASE_URL.get(kind)
+    return tmpl.format(id=case_id) if (tmpl and case_id) else None
+
+
 def _cdata(tag: str, block: str) -> str:
     m = re.search(rf"<{tag}>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</{tag}>", block, re.S)
     return (m.group(1).strip() if m else "").replace("<br/>", " ")
@@ -575,18 +775,22 @@ def search_cases(
                                         "display": top_k, "query": q})
         for block in re.findall(rf"<{k} id=.*?</{k}>", xml, re.S):
             if k == "prec":
+                _cid = _cdata("판례일련번호", block)
                 out.append({
                     "kind": "prec",
-                    "case_id": _cdata("판례일련번호", block),
+                    "case_id": _cid,
+                    "source_url": _case_url("prec", _cid),
                     "title": _cdata("사건명", block),
                     "org": _cdata("법원명", block),
                     "case_no": _cdata("사건번호", block),
                     "date": _cdata("선고일자", block),
                 })
             else:
+                _cid = _cdata("법령해석례일련번호", block)
                 out.append({
                     "kind": "expc",
-                    "case_id": _cdata("법령해석례일련번호", block),
+                    "case_id": _cid,
+                    "source_url": _case_url("expc", _cid),
                     "title": _cdata("안건명", block),
                     # 검색 응답은 회신기관/회신일자, 본문 응답은 해석기관/해석일자 — 명칭이 다르다
                     "org": _cdata("회신기관명", block) or _cdata("해석기관명", block),
@@ -616,15 +820,18 @@ def get_case(
     # 전 필드 빈 문자열로 조용히 넘기던 결함 — 구조화 오류+행동 지침으로 대체.
     if "일치하는" in xml or not (_cdata("사건명", xml) or _cdata("안건명", xml)):
         return {"error": "case_body_unavailable", "kind": kind, "case_id": case_id,
+                "source_url": _case_url(kind, case_id),
                 "hint": "이 판례·해석례는 law.go.kr에 본문이 제공되지 않습니다"
                         "(하급심·타기관 제공 등). 검색 결과의 사건명·사건번호를 그대로"
                         " 인용하되 본문 근거가 필요하면 다른 판례를 조회하세요."}
     if kind == "prec":
         return {"kind": "prec", "case_id": case_id,
+                "source_url": _case_url("prec", case_id),
                 "title": _f("사건명"), "org": _f("법원명"), "case_no": _f("사건번호"),
                 "date": _f("선고일자"), "issue": _f("판시사항"),
                 "summary": _f("판결요지"), "referenced_laws": _f("참조조문", 800)}
     return {"kind": "expc", "case_id": case_id,
+            "source_url": _case_url("expc", case_id),
             "title": _f("안건명"), "org": _f("해석기관명"), "case_no": _f("안건번호"),
             "date": _f("해석일자"), "question": _f("질의요지"),
             "answer": _f("회답"), "reasoning": _f("이유", 4000)}

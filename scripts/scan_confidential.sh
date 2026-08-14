@@ -53,7 +53,9 @@ fail=0
 for pat in "${PATTERNS[@]}"; do
   # /etl/data/: 공개 간행물 파싱 산출물(.gitignore) — 원문에 공기업명이 정당 등장
   # tests/qa_bank.json: leak 탐침 질문("한국수자원공사 내규…")이 의도적으로 포함된 테스트 데이터
-  hits=$(grep -rInE "${EXCLUDES[@]}" -e "$pat" "$ROOT" 2>/dev/null | grep -v "$SELF" | grep -v "/\.env:" | grep -v "/etl/data/" | grep -v "tests/qa_bank.json" || true)
+  # /\.env(\.bak…)?: — .env 본체와 그 날짜접미사 백업(.gitignore:41 '*.bak-*')은 커밋되지
+  # 않으므로 공개 표면이 아니다. .env.example(추적 대상)은 계속 스캔한다.
+  hits=$(grep -rInE "${EXCLUDES[@]}" -e "$pat" "$ROOT" 2>/dev/null | grep -v "$SELF" | grep -vE "/\.env(\.bak[^:]*)?:" | grep -v "/etl/data/" | grep -v "tests/qa_bank.json" || true)
   if [[ -n "$hits" ]]; then
     fail=1
     echo "=== 매치: /$pat/ ==="

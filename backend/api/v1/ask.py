@@ -202,6 +202,10 @@ _SYSTEM_PROMPT = """당신은 공공계약 실무 전문 AI 어시스턴트입�
    - 잘못된 예: 자료에 "시행령 제26조"만 있는데 "시행령 제42조에 따라..."로 답변 (환각)
    - 올바른 예: 자료에 조문이 명시된 경우만 그대로 인용. 없으면 "관련 시행령 규정에 따라..."
 
+10-1. **[확정 사실] 블록이 있으면 그 값이 최우선입니다.** 그 블록은 검색이 아니라 룰엔진이
+   금액에서 계산한 결정론 값입니다. 참고 자료(검색 문서)에 다른 수치가 보이더라도 개정 전
+   자료일 수 있으므로, [확정 사실]의 수치를 그대로 답하고 검색 문서의 상충 수치는 쓰지 마세요.
+
 11. **부적절 요청 거절**: 낙찰 확률을 인위적으로 높이는 방법, 특정 업체에 유리하게 조건을 설계하는 방법, 담합·입찰 방해에 해당할 수 있는 요청에는 검색 여부와 무관하게 **명시적으로 거절**하세요 — "해당 요청은 공정경쟁 원칙(국가계약법 제7조 일반경쟁 원칙)에 반할 수 있어 안내할 수 없습니다"라고 답하고, 적법한 대안(제한·지명경쟁의 법정 요건 등)이 있으면 그것만 안내하세요.
 
 [핵심 임계값 표 — 검증된 확정 값. 금액·한도 질문은 이 표가 검색 결과·사전지식보다 우선한다]
@@ -430,6 +434,74 @@ def _ground_law_sources(answer: str, chunks: list[dict], sources: list, as_dict:
         law_out = conv
 
     return law_out + non_law
+
+
+# ── 낙찰하한율은 결정론 값이 진실이다 (2026-08-05 P0 수리) ─────────────────────
+# 계기: 70억 종합공사를 물으면 챗봇이 85.495%를 답했다. 출처는 RAG 코퍼스의
+# `(감사원)공공계약 실무가이드.pdf` — **개정 전 세대의 표**다(그 문서엔 85.495%가 14회
+# 나오고 현행 값 87.495/88.745/89.745는 한 번도 안 나온다). 청크 메타에 발간연도·시행일
+# 필드가 없어 신선도로 거를 방법도 없고, 어느 청크가 rerank 1위를 먹느냐에 답이 달렸다
+# (같은 질문에 회차마다 85.495%·89.745%가 번갈아 나온 이유).
+#
+# 요율은 검색으로 알아낼 것이 아니라 **금액에서 결정론적으로 계산되는 값**이다.
+# 그래서 룰엔진 답을 [확정 사실]로 문맥 맨 앞에 넣고, 시스템 프롬프트가 이 블록을
+# 참고 자료보다 우선하게 한다. 검색이 낡은 표를 물어와도 답을 덮지 못한다.
+#
+# 보수적 설계: 금액을 **명확히** 못 읽으면 아무것도 주입하지 않는다(빈 문자열).
+# 틀린 주입은 지금보다 나쁘다 — 잘못 읽은 금액으로 확정 사실을 만들면 안 된다.
+_RATE_INTENT = re.compile(r"낙찰\s*하한\s*율|하한\s*율")
+_CONSTRUCTION_HINT = re.compile(r"공사|건설|시설")
+# "70억", "70억원", "7,000,000,000원", "1,500백만원"은 다루지 않는다(모호) — 억/원만.
+_AMOUNT_EOK = re.compile(r"(\d+(?:\.\d+)?)\s*억")
+_AMOUNT_WON = re.compile(r"([\d,]{7,})\s*원")
+
+
+def _parse_amount(q: str) -> int | None:
+    """질문에서 추정가격을 읽는다. 애매하면 None(주입 안 함)."""
+    eok = _AMOUNT_EOK.findall(q)
+    won = [w for w in _AMOUNT_WON.findall(q) if w.replace(",", "").isdigit()]
+    # 금액이 둘 이상 나오면 어느 것이 추정가격인지 알 수 없다 → 포기
+    if len(eok) + len(won) != 1:
+        return None
+    if eok:
+        return int(float(eok[0]) * 100_000_000)
+    return int(won[0].replace(",", ""))
+
+
+def _deterministic_rate_block(question: str) -> str:
+    """공사 낙찰하한율 질문이면 룰엔진 값을 [확정 사실]로 만든다."""
+    if not _RATE_INTENT.search(question) or not _CONSTRUCTION_HINT.search(question):
+        return ""
+    price = _parse_amount(question)
+    if not price:
+        return ""
+    try:
+        from backend.api.deps import get_rule_engine
+        engine = get_rule_engine()
+        rates = set()
+        byeolpyo = None
+        for rule in engine.match({"estimated_price": price, "contract_type": "construction",
+                                  "construction_specialty": "general"}):
+            info = engine.get_pass_score(rule, price)
+            r = info.get("lower_limit_rate")
+            if r is not None:
+                rates.add(r)
+                byeolpyo = byeolpyo or info.get("byeolpyo")
+        # 룰끼리 값이 갈리면 주입하지 않는다 — 확정이 아닌 것을 확정이라 부르지 않는다.
+        # (이 상태 자체가 결함이고 tests/unit/test_rate_single_source.py가 잡는다.)
+        if len(rates) != 1:
+            return ""
+        rate = rates.pop()
+        eok = price / 100_000_000
+        amt = f"{eok:.1f}억원" if eok < 100 else f"{eok:,.0f}억원"
+        bp = f" (적격심사 {byeolpyo})" if byeolpyo else ""
+        return (f"[확정 사실 — 룰엔진 계산값, 아래 참고 자료보다 우선]\n"
+                f"추정가격 {amt} 종합공사의 적격심사 낙찰하한율: "
+                f"{rate * 100:.3f}%{bp}\n"
+                f"※ 낙찰하한율은 금액 구간에 따라 결정되는 값이며, 검색 문서에 다른 수치가 "
+                f"보이더라도 그것은 개정 전 자료일 수 있습니다. 위 값을 사용하세요.\n\n")
+    except Exception:
+        return ""
 
 
 def _screen_context_prefix(ctx: dict | None) -> str:
@@ -666,8 +738,9 @@ async def ask_question(
             unverified_citations=[], avg_relevance=0.0)
     context = _build_context(chunks, max_chars=10000)
     screen_prefix = _screen_context_prefix(req.context)
+    rate_block = _deterministic_rate_block(req.question)
 
-    user_msg = f"""{screen_prefix}[참고 자료]
+    user_msg = f"""{screen_prefix}{rate_block}[참고 자료]
 {context}
 
 [질문]
