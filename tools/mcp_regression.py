@@ -367,6 +367,53 @@ CASES = [
                 and any("준공검사" in r.get("rule", "") for r in d["day_count_rules"])
                 and all(p.get("source") for p in d.get("precedents") or [])
                 and len(d.get("precedents") or []) >= 3)),
+
+    # ── 이행단계 축 Phase 3: 물가변동 계약금액 조정 (T-2026W33-166, 2026-08-14) ──
+    ("R47-물가변동-90일경계+산식",   # 90일 '이상'이므로 정확히 90일도 충족. 조정금액·선금
+     "check_price_adjustment",     # 공제 산식(시행규칙 제74조 제5·6항)까지 한 케이스에서 본다
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-04-01",
+      "adjustment_rate_pct": 4.2, "adjustment_base_amount": 1000000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: (d.get("verdict") == "requirements_met"
+                and (d.get("period") or {}).get("elapsed_days") == 90
+                and (d.get("computed") or {}).get("adjustment_amount") == 42000000
+                and ((d.get("computed") or {}).get("advance_deduction") or {}).get("amount") == 12600000
+                and (d.get("computed") or {}).get("net_amount") == 29400000)),
+    ("R48-단품문턱-국가15%",        # 자재 12%는 국가에선 **미달**이다. 지방 문턱(10%)을
+     "check_price_adjustment",     # 국가에 쓰면 없는 권리를 있다고 답하게 된다
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-06-01",
+      "is_construction": True, "single_item_rate_pct": 12,
+      "single_item_share_over_5permille": True},
+     lambda d: ((d.get("single_item") or {}).get("threshold_pct") == 15.0
+                and (d.get("single_item") or {}).get("met") is False)),
+    ("R49-단품문턱-지방10%",        # 같은 12%가 지방에선 충족 — 기관축이 갈리는 지점이라
+     "check_price_adjustment",     # R48과 쌍으로 박는다(이 저장소 재발 결함 계열)
+     {"org_type": "local", "contract_date": "2026-01-01", "check_date": "2026-06-01",
+      "is_construction": True, "single_item_rate_pct": 12,
+      "single_item_share_over_5permille": True},
+     lambda d: ((d.get("single_item") or {}).get("threshold_pct") == 10.0
+                and (d.get("single_item") or {}).get("met") is True)),
+    ("R50-조정률미제공-판정보류",    # 우리는 조정률을 산정하지 못한다 — 모르면 '아니오'가
+     "check_price_adjustment",     # 아니라 '모른다'여야 한다(못 봄 ≠ 없음)
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-06-01"},
+     lambda d: (d.get("verdict") == "undetermined"
+                and (d.get("rate") or {}).get("met") is None
+                and bool((d.get("rate") or {}).get("why_unknown"))
+                and any("산정" in c for c in d.get("cannot_do", [])))),
+    ("R51-90일예외-발주기관인정",    # 천재지변·원자재 급등 예외는 '자동 통과'가 아니다 —
+     "check_price_adjustment",     # 인정 주체가 발주기관임을 함께 말해야 한다
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-03-01",
+      "adjustment_rate_pct": 4.2, "urgent_exception": True},
+     lambda d: (d.get("verdict") == "exception_path"
+                and ((d.get("period") or {}).get("exception") or {}).get("applies") is True
+                and "발주기관" in ((d.get("period") or {}).get("exception") or {}).get("caution", ""))),
+    ("R52-방식-기본값-추정공시",     # 계약서 명시를 모르면 품목조정률이 기본이지만, 그것이
+     "check_price_adjustment",     # 추정이라는 사실을 밝혀야 한다(조용한 기본값 금지)
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-06-01",
+      "adjustment_rate_pct": 3.5},
+     lambda d: ((d.get("method") or {}).get("applied") == "item"
+                and (d.get("method") or {}).get("declared_in_contract") is None
+                and "확인" in ((d.get("method") or {}).get("assumption") or ""))),
 ]
 
 

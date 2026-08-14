@@ -133,7 +133,7 @@ WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idem
 
 # server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
 # 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
-SERVER_VERSION = "1.5.0"
+SERVER_VERSION = "1.6.0"
 
 server = MCPServer(
     name="contract-compass",
@@ -601,6 +601,69 @@ def delay_exemption_guide(
     if ground:
         params["ground"] = ground
     return _get("/penalty/delay/exemptions", params)
+
+
+@server.tool(annotations=READ_ONLY)
+def check_price_adjustment(
+    org_type: Literal["national", "local", "public_corp"],
+    contract_date: str,
+    check_date: str,
+    last_adjustment_date: str | None = None,
+    adjustment_rate_pct: float | None = None,
+    method_specified_in_contract: Literal["item", "index"] | None = None,
+    urgent_exception: bool = False,
+    single_item_rate_pct: float | None = None,
+    single_item_share_over_5permille: bool | None = None,
+    is_construction: bool = False,
+    adjustment_base_amount: int | None = None,
+    advance_payment_ratio: float | None = None,
+) -> dict:
+    """물가변동 계약금액 조정(에스컬레이션) 요건 판정 + 산식 적용 — 이행단계 Phase 3.
+
+    "자재값이 올랐는데 계약금액을 올려받을 수 있나", "90일 지났나", "단품 조정 되나"에 쓰라.
+
+    **이 도구는 조정률을 산정하지 못한다.** 품목조정률·지수조정률은 산출내역서와 지수·단가
+    원천(한국은행 생산자물가지수 등)으로 계산하는 값인데 이 서버는 그 데이터를 갖고 있지
+    않다 — 그러니 `adjustment_rate_pct`는 **사용자·발주기관이 산정한 값**을 받아 쓰고,
+    안 주면 요건 ②를 `met: null`로 두고 판정을 보류한다. 없는 값을 지어내지 마라.
+
+    판정하는 것(결정론): ①기간 요건(계약체결일 또는 직전 조정기준일부터 90일 이상)
+    ②등락률 3% 문턱 ③**단품 조정 문턱 — 국가·공기업 15%, 지방 10%(2024 개정으로 갈렸다)**
+    ④조정 방식 결정 규칙(계약서에 지수조정률 명시가 없으면 품목조정률)
+    ⑤조정금액 = 물가변동적용대가 × 조정률, 선금 공제 = 위 값 × 선금급률.
+
+    응답의 verdict: requirements_met / requirements_not_met / exception_path(천재지변·
+    원자재 급등 예외 검토 대상 — 인정 주체는 발주기관) / undetermined(조정률 미제공).
+
+    Args:
+        org_type: "national"|"local"|"public_corp" — **추측 금지**(단품 문턱이 다르다)
+        contract_date: 계약체결일 "YYYY-MM-DD". 장기계속계약은 **제1차계약 체결일**
+        check_date: 조정 검토·청구 시점 "YYYY-MM-DD"
+        last_adjustment_date: 직전 조정기준일(있으면 기간 기산점이 이쪽으로 바뀐다)
+        adjustment_rate_pct: 산정된 품목·지수 조정률(%). 감액도 그대로(음수) 넣어라
+        method_specified_in_contract: 계약서에 지수조정률이 명시됐으면 "index", 품목이면
+            "item". 모르면 생략 — 기본값(품목조정률)으로 안내하되 그 사실을 응답에 밝힌다
+        urgent_exception: 천재지변·원자재 급등으로 90일 이내 조정을 검토하는가
+        single_item_rate_pct: 단품 조정 검토 시 해당 자재 가격증감률(%)
+        single_item_share_over_5permille: 그 자재가 재료비·노무비·경비 합계액의 1천분의 5를
+            초과하는가(산출내역서로 확인 — 우리가 계산하지 못한다)
+        is_construction: 공사계약인가(단품 조정은 공사 전용 제도)
+        adjustment_base_amount: 물가변동적용대가(원) — 조정기준일 **이후** 이행분의 대가
+        advance_payment_ratio: 선금급률(비율, 30%면 0.3)
+    """
+    body: dict[str, Any] = {
+        "org_type": org_type, "contract_date": contract_date, "check_date": check_date,
+        "last_adjustment_date": last_adjustment_date,
+        "adjustment_rate_pct": adjustment_rate_pct,
+        "method_specified_in_contract": method_specified_in_contract,
+        "urgent_exception": urgent_exception,
+        "single_item_rate_pct": single_item_rate_pct,
+        "single_item_share_over_5permille": single_item_share_over_5permille,
+        "is_construction": is_construction,
+        "adjustment_base_amount": adjustment_base_amount,
+        "advance_payment_ratio": advance_payment_ratio,
+    }
+    return _post("/adjustment/price", body)
 
 
 @server.tool(annotations=WRITE_FEEDBACK)

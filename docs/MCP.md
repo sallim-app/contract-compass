@@ -18,7 +18,7 @@
 3. **구조화 실패** — 오류·한도 초과는 예외가 아니라 `{"error", "message", "hint"}` dict로
    반환된다. 에이전트는 hint의 행동지침을 따르면 된다.
 
-## 도구 명세 (10종)
+## 도구 명세 (11종)
 
 ### decide_contract_method — 계약방법 결정론 판정
 룰엔진(94룰, 국가/지방/공기업 3프로파일)이 적용 가능한 계약방법 후보를 법령 근거와 반환.
@@ -100,6 +100,23 @@
 - `quote_truncated:true`면 회수 인용이 끊긴 것이다. 이어 붙이지 말고 search_references로 전문 확인
 - 2026-08-14 · 회귀 R43~R46
 
+### check_price_adjustment — 물가변동 계약금액 조정 요건·산식 (이행단계 Phase 3)
+근거=국가계약법 시행령 제64조·시행규칙 제74조 / 지방계약법 시행령 제73조.
+수치의 진실원은 `rules/price_adjustment_rules.json`.
+- 입력: `org_type`(**필수**), `contract_date`·`check_date`(YYYY-MM-DD), 선택:
+  `last_adjustment_date`·`adjustment_rate_pct`·`method_specified_in_contract`(item|index)·
+  `urgent_exception`·`single_item_rate_pct`·`single_item_share_over_5permille`·
+  `is_construction`·`adjustment_base_amount`·`advance_payment_ratio`
+- 반환: `verdict`(requirements_met|requirements_not_met|exception_path|**undetermined**)·
+  `period`(90일 기산·경과일)·`rate`(3% 문턱)·`method`(품목/지수 결정 규칙)·
+  `single_item`(단품 문턱)·`computed`(조정금액·선금공제·순증)·`cannot_do`·`legal_basis`
+- **조정률은 우리가 산정하지 못한다** — 지수·단가 원천 미보유. 사용자가 산정한 값을 받고,
+  없으면 `rate.met: null` + `verdict: undetermined`로 **판정을 보류**한다(못 봄 ≠ 없음)
+- **단품 조정 문턱은 국가·공기업 15%, 지방 10%**(지방 2024.2.13 개정으로 갈렸다) —
+  같은 12%가 기관에 따라 정반대 결과가 된다. 회귀 R48·R49가 쌍으로 지킨다
+- 90일 예외(천재지변·원자재 급등)는 자동 통과가 아니라 **발주기관 인정 사항**임을 함께 낸다
+- 2026-08-14 · 회귀 R47~R52
+
 ### report_issue — 오류·개선 제보 (유일한 쓰기 도구)
 - 입력: `category`(wrong_citation|outdated_law|wrong_ruling|tool_error|feature_request|other),
   `message`(10자 이상), 선택: `related_tool`·`related_query`·`expected`
@@ -118,6 +135,8 @@
 - 계약방법 질문 → `decide_contract_method` → 근거 조문 `get_law_article` 검증
 - **이행 지체 질문** → `estimate_delay_penalty`(금액) → 면책 쟁점이 있으면
   `delay_exemption_guide`(사유·확인할 사실) → 불산입 일수 확정 후 excluded_days로 재계산
+- **자재값·물가 상승 질문** → `check_price_adjustment`(90일·3%·단품 문턱 판정, 조정률은
+  사용자·발주기관 산정값을 받아 산식 적용)
 - **질문에 과거 시점이 있으면**(체결일·공고일·처분일) → `get_law_article_asof`로 그
   시점 조문 확인. 현행과 다르면 `is_current:false`가 신호
 - 수치·기준 질문(하한율·보증금·제재기간) → `search_references`(별표) + `search_law`
