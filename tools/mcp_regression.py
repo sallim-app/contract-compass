@@ -451,6 +451,23 @@ CASES = [
      lambda d: (d.get("count", 0) == 0 or
                 (d.get("matched_by") == "semantic_fallback"
                  and "키워드 매치 0건" in (d.get("note_fallback") or "")))),
+    ("R58-문화재공사-전용룰-1순위",   # 공용(센티널) 룰이 전용 룰의 1순위를 뺏던 결함
+     "decide_contract_method",       # (T-2026W33-148): 국가 문화재수리 1.8억의 1순위가
+     {"contract_type": "construction", "estimated_price": 180000000,  # CST_FIRE_002(소방)
+      "org_type": "national", "construction_specialty": "cultural_heritage",  # 였다 — 실무자가
+      "project_name": "회귀검사"},   # 소방시설공사업 요건을 문화재수리 요건으로 읽는다
+     lambda d: (lambda cs: bool(cs) and cs[0].get("rule_id") == "CST_HERITAGE_002"
+                # 공용 룰은 금액 근거라 남기되, 남았으면 '업종 요건이 아니다'를 실토해야 한다
+                and all(("공용 룰" in (c.get("notes") or ""))
+                        for c in cs if c.get("rule_id") == "CST_FIRE_002"))(
+                    d.get("candidates", []))),
+    ("R59-소방공사-자기영역-불변",    # R58의 짝 — 강등이 소방공사 질의의 1순위를 깎지 않는다
+     "decide_contract_method",
+     {"contract_type": "construction", "estimated_price": 180000000,
+      "org_type": "national", "construction_specialty": "fire_safety",
+      "project_name": "회귀검사"},
+     lambda d: (lambda cs: bool(cs) and cs[0].get("rule_id") == "CST_FIRE_002"
+                and "공용 룰" not in (cs[0].get("notes") or ""))(d.get("candidates", []))),
     ("R57-선례-계열밖-미노출",       # 용역 질의에 공사 전용 회신(동절기 공사중지·장기계속
      "delay_exemption_guide", {"contract_kind": "service"},  # 하자)을 표시 없이 얹지 않는다
      lambda d: (lambda ids: "winter_suspension" not in ids

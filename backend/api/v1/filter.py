@@ -52,6 +52,21 @@ PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 from backend.services.rule_engine import rule_method as _rule_method  # noqa: E402
 
 
+# 2026-08-14 T-2026W33-148: `fire_safety`·`professional_generic` 룰은 '그 밖의 공사'·
+# 전문공사 14종의 **금액 기준 공용 룰**을 겸한다. 정확 일치 룰이 1순위로 오도록 고쳤지만
+# (rule_engine._sort_key) 공용 룰은 후보에 남으므로, 남은 것이 무엇인지 밝혀야 한다 —
+# 문화재수리공사 질의에 "소방공사 일반경쟁"이 이름째로 놓여 있으면 소방 전용 요건으로 읽힌다.
+_SENTINEL_NOTE = ("※ 이 룰은 해당 전문분야 전용 규정이 아니라 '그 밖의 공사(법령공사)'·"
+                  "전문공사의 **금액 기준 공용 룰**이다 — 룰 이름의 업종(예: 소방공사)을 "
+                  "면허·업종 요건으로 읽지 말고, 금액 구간·낙찰하한율만 참고하라. "
+                  "업종 요건은 해당 공사의 근거 법령(문화유산수리 등 진흥법, 전기공사업법 등)을 확인할 것.")
+
+
+def _with_sentinel_note(rule: dict | None, notes: str | None) -> str | None:
+    if not rule or rule.get("_specialty_match") != "sentinel":
+        return notes
+    return f"{notes}\n{_SENTINEL_NOTE}" if notes else _SENTINEL_NOTE
+
 def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
 
@@ -288,7 +303,7 @@ async def step1(
             bidder_options=bidder_opts,
             bidder_selection=bidder_sel,
             legal_basis=rule_legal_basis,
-            notes=rule.get("notes") if rule else None,
+            notes=_with_sentinel_note(rule, rule.get("notes") if rule else None),
         ))
 
     # 결정론적 보정: LLM이 최상위 매칭 규칙을 누락하면 강제 주입
@@ -321,7 +336,7 @@ async def step1(
                 summary=top_rule.get("name", ""),
                 key_params=injected_key_params,
                 clarifying_questions=[],
-                notes=top_rule.get("notes"),
+                notes=_with_sentinel_note(top_rule, top_rule.get("notes")),
             ))
 
     # 결정론적 재정렬: 규칙 엔진의 priority(낮을수록 더 구체적) 순서를 강제
@@ -329,7 +344,10 @@ async def step1(
     # `_effective_priority`는 룰엔진이 '이하' 경계 정확값에서 붙이는 보정치 —
     # 이 키를 무시하고 raw priority로 재정렬하면 엔진의 경계 보정이 여기서 되돌아간다
     # (2026-08-13 T-2026W33-99: 1억원 정확값 1순위 뒤집힘의 두 번째 코드 위치).
-    rule_priority = {r["rule_id"]: r.get("_effective_priority", r.get("priority", 999))
+    # `_order_rank`는 룰엔진이 확정한 최종 순서(경계 보정 + 센티널 강등)다 — 이 값을
+    # 무시하고 priority로 재정렬하면 엔진의 보정이 여기서 되돌아간다(T-2026W33-99·148).
+    rule_priority = {r["rule_id"]: r.get("_order_rank",
+                                         r.get("_effective_priority", r.get("priority", 999)))
                      for r in matched_rules}
     candidates.sort(key=lambda c: rule_priority.get(c.rule_id, 999))
     # F31 (2026-06-10): candidates max 3개 — UI 노출은 1순위+2~3 보조만, INTL 같은 보조 룰이 4번째로 끼면 제외

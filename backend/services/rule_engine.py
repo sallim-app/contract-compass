@@ -44,6 +44,30 @@ class RuleEngine:
     def thresholds(self) -> dict:
         return self._data.get("thresholds", {})
 
+    # 공용(센티널) 룰이 대신 받는 전문분야 집합 — _check_conditions와 아래 판별기가 공유한다.
+    _PRO_GROUP = {"ground_paving", "interior", "metal_window_roof", "painting_waterproof",
+                  "landscape", "steel_structure", "underwater_dredging", "elevator",
+                  "mechanical", "gas_heating", "water_sewer", "boring_grouting",
+                  "railway", "facility_maintenance"}
+    _LEGAL_GROUP = {"fire_safety", "cultural_heritage", "other"}
+
+    def _specialty_match_kind(self, rule: dict, params: dict) -> str | None:
+        """이 룰이 전문분야를 **정확히** 물었나, 공용(센티널) 룰로 대신 받았나.
+
+        2026-08-14 T-2026W33-148: `fire_safety` 룰이 '그 밖의 공사(법령공사)' 금액 기준
+        공용 룰을 겸하는데, 그 때문에 문화재수리공사 질의가 CST_HERITAGE_002(정확 일치)와
+        CST_FIRE_002(센티널)에 **동시에** 매칭됐다. 둘은 priority가 같아(115) 파일 순서로
+        소방 룰이 1순위를 가져갔고, 실무자는 **소방시설공사업 요건**을 문화재수리공사의
+        요건으로 읽게 됐다(기치 ① 도메인 사실 정확성 위반, 라이브 실측).
+        금액 구간 판정에는 공용 룰이 맞으므로 후보에서 지우지는 않고, **정확 일치 룰보다
+        뒤로** 보낸다(아래 _sort_key).
+        """
+        val = (rule.get("conditions") or {}).get("construction_specialty")
+        if val is None:
+            return None
+        p_spec = params.get("construction_specialty")
+        return "exact" if p_spec == val else "sentinel"
+
     def match(self, params: dict, org_type: str = "public_corp") -> list[dict]:
         """입력 파라미터에 맞는 규칙을 우선순위 순으로 반환.
 
@@ -66,12 +90,27 @@ class RuleEngine:
             if rule_ct != "public_procurement" and input_ct and rule_ct != input_ct:
                 continue
             if self._check_conditions(rule.get("conditions", {}), params):
-                matched.append(rule)
-        return self._order_matched(matched, params.get("estimated_price", 0))
+                kind = self._specialty_match_kind(rule, params)
+                matched.append({**rule, "_specialty_match": kind} if kind else rule)
+        ordered = self._order_matched(matched, params.get("estimated_price", 0))
+        # 최종 순서를 값으로 박아 하위 소비자(api/v1/filter.py)가 재정렬해도 유지되게 한다 —
+        # priority만 다시 읽으면 여기서 한 보정(경계·센티널)이 되돌아간다.
+        return [{**r, "_order_rank": i} for i, r in enumerate(ordered)]
 
     # 경계에서 새로 열리는 룰을 '이하' 룰 바로 뒤로 보낼 때 쓰는 증분 —
     # 정수 priority 사이에 끼우기만 하면 되므로 값 자체엔 의미가 없다.
     _BOUNDARY_EPSILON = 0.5
+
+    def _sort_key(self, rule: dict) -> tuple:
+        """정렬 우선순위: ①전문분야 정확 일치 먼저 ②경계 보정 priority ③원 priority.
+
+        센티널(공용 룰) 강등이 ①이다 — 전용 룰이 있는 전문분야에서 공용 룰이 1순위를
+        가져가면 잘못된 업종 요건을 제시한다(T-2026W33-148). 전용 룰이 없는 전문분야
+        (other 등)는 전부 센티널이라 상대 순서가 그대로다.
+        """
+        return (1 if rule.get("_specialty_match") == "sentinel" else 0,
+                rule.get("_effective_priority", rule.get("priority", 999)),
+                rule.get("priority", 999))
 
     def _order_matched(self, matched: list[dict], price: int) -> list[dict]:
         """priority 순 정렬 — 단, `boundary_inclusive_rank` 룰의 상한 경계에서 순위 역전을 막는다.
@@ -108,7 +147,7 @@ class RuleEngine:
                    if r.get("boundary_inclusive_rank")
                    and r.get("conditions", {}).get("estimated_price_lte") == price]
         if not closing:
-            return sorted(matched, key=lambda r: r.get("priority", 999))
+            return sorted(matched, key=self._sort_key)
 
         floor = min(r.get("priority", 999) for r in closing)
         adjusted = []
@@ -121,8 +160,7 @@ class RuleEngine:
                 rule = {**rule, "_effective_priority": floor + self._BOUNDARY_EPSILON}
             adjusted.append(rule)
         # 2차 키(원 priority)로 보정된 룰들끼리의 상대 순서를 유지
-        adjusted.sort(key=lambda r: (r.get("_effective_priority", r.get("priority", 999)),
-                                     r.get("priority", 999)))
+        adjusted.sort(key=self._sort_key)
         return adjusted
 
     def _check_conditions(self, conditions: dict, params: dict) -> bool:
@@ -222,12 +260,8 @@ class RuleEngine:
                 # 전문 14종이 1.6억 룰(CST_ELEC_*)에, 전기공사가 2억 룰(LOCAL_*_PRO)에
                 # 양방향 오판정됐다. 법령공사 그룹(other 포함)은 fire_safety 룰 재사용.
                 p_spec = params.get("construction_specialty")
-                PRO_GROUP = {"ground_paving", "interior",
-                             "metal_window_roof", "painting_waterproof", "landscape",
-                             "steel_structure", "underwater_dredging", "elevator",
-                             "mechanical", "gas_heating", "water_sewer",
-                             "boring_grouting", "railway", "facility_maintenance"}
-                LEGAL_GROUP = {"fire_safety", "cultural_heritage", "other"}
+                PRO_GROUP = self._PRO_GROUP
+                LEGAL_GROUP = self._LEGAL_GROUP
                 if p_spec == val:
                     pass  # 정확 일치
                 elif val == "professional_generic" and p_spec in PRO_GROUP:
