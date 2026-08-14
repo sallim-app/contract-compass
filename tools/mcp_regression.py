@@ -339,6 +339,34 @@ CASES = [
      "get_case", {"kind": "prec", "case_id": "204256"},  # 인용에서 근거를 되짚을 수 없었다
      lambda d: (d.get("source_url", "").startswith("https://www.law.go.kr/")
                 and "204256" in d.get("source_url", ""))),
+
+    # ── 이행단계 축 Phase 2: 면책 사유 갈림길 지도 (T-2026W33-165, 2026-08-14) ──
+    # Phase 1이 "지체일수는 정하지 않는다"고 거부한 자리에 **대신 줄 것**을 놓은 것이라,
+    # 회귀의 초점도 "판정하지 않으면서 길을 주는가"다.
+    ("R43-면책지도-판정거부+확인사실",  # 판정표로 오해되면 이 도구는 위험해진다 — 판정
+     "delay_exemption_guide", {"contract_kind": "construction"},  # 거부 계약과 확인할
+     lambda d: ("판정하지 않는다" in ((d.get("who_decides") or {}).get("tool_contract") or "")
+                and d.get("grounds_count", 0) >= 5   # 사실(must_establish)이 사유마다 있어야
+                and all(g.get("must_establish") for g in d.get("grounds", []))
+                and all(g.get("basis") for g in d.get("grounds", [])))),
+    ("R44-계열밖사유-거부",           # 용역 계약에 공사 전용 사유(설계변경)를 물으면 조용히
+     "delay_exemption_guide",       # 목록을 내주는 대신 거부하고 가능한 사유를 알려준다
+     {"contract_kind": "service", "ground": "design_change"},
+     lambda d: (d.get("error") in ("ground_not_applicable", "backend_error")
+                and "design_change" in (d.get("message") or "") + str(d.get("hint") or ""))),
+    ("R45-SW절반규칙-공시",          # 용역 SW 사유는 **전액이 아니라 1/2만** 불산입이다.
+     "delay_exemption_guide",       # 다른 호와 같이 다루면 계산이 두 배로 틀린다.
+     {"contract_kind": "service", "ground": "sw_requirement_change"},
+     lambda d: (lambda g: bool(g) and "1/2" in (g[0].get("partial") or "")
+                # 회수 인용이 끊긴 항목은 끊겼다고 표시해야 한다(이어 붙이지 않는다)
+                and g[0].get("quote_truncated") is True)(d.get("grounds"))),
+    ("R46-일수계산규칙+선례",        # 사유 목록만으론 부족하다 — 준공검사 기간 불산입·최종
+     "delay_exemption_guide", {"contract_kind": "product_manufacture"},  # 확정 계약금액 기준 같은
+     # 금액 규칙과 회신 선례가 출처와 함께 와야 실무자가 그대로 쓸 수 있다
+     lambda d: (len(d.get("day_count_rules") or []) >= 4
+                and any("준공검사" in r.get("rule", "") for r in d["day_count_rules"])
+                and all(p.get("source") for p in d.get("precedents") or [])
+                and len(d.get("precedents") or []) >= 3)),
 ]
 
 

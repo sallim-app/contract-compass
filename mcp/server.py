@@ -133,7 +133,7 @@ WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idem
 
 # server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
 # 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
-SERVER_VERSION = "1.4.0"
+SERVER_VERSION = "1.5.0"
 
 server = MCPServer(
     name="contract-compass",
@@ -563,6 +563,44 @@ def estimate_delay_penalty(
         "accepted_portion_amount": accepted_portion_amount,
         "design_build_approved": design_build_approved,
     })
+
+
+@server.tool(annotations=READ_ONLY)
+def delay_exemption_guide(
+    contract_kind: Literal["construction", "product_manufacture", "product_repair",
+                           "service", "military_food", "transport_storage"],
+    ground: Literal["force_majeure", "gov_supplied_material_delay", "owner_caused_delay",
+                    "contractor_default_surety", "design_change", "innovative_product_defect",
+                    "raw_material_shortage", "sw_requirement_change",
+                    "product_owner_side_delay"] | None = None,
+) -> dict:
+    """지체일수에서 **빼는(불산입) 사유** 지도 — estimate_delay_penalty가 정하지 않는 부분.
+
+    "이 지연은 우리 책임이 아닌데 지체상금을 물어야 하나", "동절기 공사중지 기간도
+    지체일수인가", "관급자재가 늦게 와서 늦어졌다" 같은 질문에 쓰라.
+
+    **이 도구는 해당 여부를 판정하지 않는다.** 일반조건 문언 자체가 "계약담당공무원이
+    인정할 때"를 요건으로 두므로 판단은 발주기관 몫이다. 도구가 주는 것은 셋이다 —
+    ①예규에 있는 사유 목록과 원문 인용 ②각 사유가 인정되려면 **확정돼야 할 사실**
+    (must_establish — 사용자와 하나씩 확인하라) ③기재부·행안부 회신 선례.
+
+    쓰는 순서: 이 도구로 사유를 좁힌다 → must_establish를 사용자와 확인한다 →
+    불산입 일수가 정해지면 estimate_delay_penalty의 excluded_days에 넣어 다시 계산한다.
+    (sw_requirement_change는 해당 일수의 **1/2**만 넣는다 — 예규가 절반만 빼준다.)
+
+    주의: `quote_truncated: true`인 항목은 우리가 회수한 조문 인용이 중간에서 끊긴 것이다
+    — 그대로 인용하지 말고 search_references로 전문을 확인하라. 끊긴 문장을 이어서
+    지어내면 그것이 이 서버가 막으려는 오답이다.
+
+    Args:
+        contract_kind: estimate_delay_penalty와 같은 값. 일반조건 계열(공사/물품/용역)로
+            매핑되며, 실제로 계약서에 편입된 일반조건이 진실원임을 응답이 경고한다
+        ground: 특정 사유 하나만 상세히 볼 때. 생략하면 그 계약유형의 전체 목록
+    """
+    params: dict[str, Any] = {"contract_kind": contract_kind}
+    if ground:
+        params["ground"] = ground
+    return _get("/penalty/delay/exemptions", params)
 
 
 @server.tool(annotations=WRITE_FEEDBACK)

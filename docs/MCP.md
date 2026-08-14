@@ -18,7 +18,7 @@
 3. **구조화 실패** — 오류·한도 초과는 예외가 아니라 `{"error", "message", "hint"}` dict로
    반환된다. 에이전트는 hint의 행동지침을 따르면 된다.
 
-## 도구 명세 (9종)
+## 도구 명세 (10종)
 
 ### decide_contract_method — 계약방법 결정론 판정
 룰엔진(94룰, 국가/지방/공기업 3프로파일)이 적용 가능한 계약방법 후보를 법령 근거와 반환.
@@ -87,6 +87,19 @@
 - `rate.inferred:true`면 법문에 명시된 값이 아니라 우리 해석이다(지방 군용 음·식료품) —
   그대로 단정하지 말고 경고를 함께 전달할 것
 
+### delay_exemption_guide — 지체일수 불산입(면책) 사유 지도 (이행단계 Phase 2)
+`estimate_delay_penalty`가 "지체일수는 정하지 않는다"고 거부한 자리에 **대신 줄 것**.
+판정표가 아니라 지도다 — 일반조건 문언이 "계약담당공무원이 인정할 때"를 요건으로 두므로
+판단은 발주기관 몫이고, 도구는 사유·원문·확인할 사실·선례만 편다.
+- 입력: `contract_kind`(estimate_delay_penalty와 동일), `ground`(선택 — 사유 하나 상세)
+- 반환: `grounds[]`(label·basis·quote·must_establish·partial)·`day_count_rules[]`·
+  `precedents[]`(기재부·행안부 회신, 문서번호·일자 포함)·`who_decides`·`next_steps`
+- 계약유형→일반조건 계열 매핑은 우리 편의이며, **계약서에 편입된 일반조건이 진실원**임을
+  `general_conditions_warning`으로 함께 낸다
+- `sw_requirement_change`(용역 SW)는 **해당 일수의 1/2만** 불산입 — excluded_days에 넣을 때 절반
+- `quote_truncated:true`면 회수 인용이 끊긴 것이다. 이어 붙이지 말고 search_references로 전문 확인
+- 2026-08-14 · 회귀 R43~R46
+
 ### report_issue — 오류·개선 제보 (유일한 쓰기 도구)
 - 입력: `category`(wrong_citation|outdated_law|wrong_ruling|tool_error|feature_request|other),
   `message`(10자 이상), 선택: `related_tool`·`related_query`·`expected`
@@ -103,6 +116,8 @@
 ## 권장 사용 흐름
 
 - 계약방법 질문 → `decide_contract_method` → 근거 조문 `get_law_article` 검증
+- **이행 지체 질문** → `estimate_delay_penalty`(금액) → 면책 쟁점이 있으면
+  `delay_exemption_guide`(사유·확인할 사실) → 불산입 일수 확정 후 excluded_days로 재계산
 - **질문에 과거 시점이 있으면**(체결일·공고일·처분일) → `get_law_article_asof`로 그
   시점 조문 확인. 현행과 다르면 `is_current:false`가 신호
 - 수치·기준 질문(하한율·보증금·제재기간) → `search_references`(별표) + `search_law`

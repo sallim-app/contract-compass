@@ -7,6 +7,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.services.delay_exemption import (DelayExemptionInputError, ground_ids,
+                                              guide)
 from backend.services.delay_penalty import (CONTRACT_KINDS, ORG_TYPES,
                                             DelayPenaltyInputError, compute)
 
@@ -40,3 +42,14 @@ def delay_penalty(req: DelayPenaltyRequest) -> dict:
         # 구조화 실패 — 에이전트가 hint의 행동지침을 따를 수 있게 한다(이 저장소 규약).
         raise HTTPException(status_code=400, detail={
             "error": e.code, "message": e.message, "hint": e.hint}) from e
+
+
+@router.get("/delay/exemptions")
+def delay_exemptions(contract_kind: str, ground: str | None = None) -> dict:
+    """지체일수 불산입(면책) 사유 지도 — Phase 2. 판정하지 않고 갈림길만 편다."""
+    try:
+        return guide(contract_kind=contract_kind, ground=ground)
+    except DelayExemptionInputError as e:
+        raise HTTPException(status_code=400, detail={
+            "error": e.code, "message": e.message, "hint": e.hint,
+            "available_grounds": ground_ids()}) from e
