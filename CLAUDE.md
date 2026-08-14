@@ -40,6 +40,8 @@
   정직 공시한다. 외부가 우리 판정을 되짚는 경로 = `tools/mcp_regression.py --endpoint <공개주소>`.
 - **`tests/question_bank.json`** — 공공계약 빈출 질문은행(배터리·회귀·콘텐츠 공용). 새 결함은
   여기에 질문 추가 → 수리 → `R*` 회귀 순서로 고정한다. 웹 /ask 회귀는 `tests/qa_bank.json`.
+- **`docs/DELAY-PENALTY-AXIS.md`** — 이행단계 축(지체상금·지연배상금) 설계. 국가/지방 요율이
+  다르다는 실측표와 인식 경계 계약(지체일수는 우리가 확정하지 않는다)이 여기 있다.
 - **`docs/RUNBOOK-failover.md`**(장애 이관) · **`docs/POSITIONING.md`**(제품 위치) ·
   **`docs/PROGRAMMATIC_SEO.md`**(생성 페이지) · **`README.md`**(사용자용 도구 표).
 
