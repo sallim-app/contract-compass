@@ -16,7 +16,7 @@
 /* ---------- 표지 ---------- */
 .cover{background:#101820;color:#F4EDE4;position:relative;overflow:hidden}
 .cover::after{content:"";position:absolute;inset:0;
-  background:radial-gradient(1100px 600px at 86% -10%, rgba(232,89,12,.34) 0%, rgba(232,89,12,0) 60%);pointer-events:none}
+  background:radial-gradient(1100px 600px at 86% -10%, rgba(20,73,122,.22) 0%, rgba(20,73,122,0) 60%);pointer-events:none}
 .cover .wrap{position:relative;padding-top:88px;padding-bottom:88px}
 .cover-glyph{width:64px;height:64px;border-radius:16px;display:grid;place-items:center;
   background:var(--brand)}
