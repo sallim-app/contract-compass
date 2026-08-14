@@ -71,3 +71,27 @@ def test_gate_tables_are_documented():
     """게이트 목록은 '왜 뺐는지'가 값으로 남아야 원복 판단이 가능하다."""
     assert all(v for v in _EXCLUDED_SOURCES.values())
     assert all(v for v in _DEGRADED_SOURCES.values())
+
+def test_excluded_document_is_absent_from_corpus():
+    """영구 제외 결정(T-2026W33-174)의 완료 판정 — 코퍼스에 청크가 0이어야 한다.
+
+    서빙 필터만으로는 부족하다: 필터를 지나지 않는 소비자(search_knowledge_web)와
+    재색인 경로가 있어서, **색인에 없는 것**이 최종 상태다. 실수로 다시 색인되면 여기서 잡힌다.
+    """
+    import chromadb
+
+    from backend.config import get_settings
+    cl = chromadb.PersistentClient(get_settings().chroma_path)
+    for name in ("public_guides", "faq"):
+        ids = cl.get_collection(name).get(
+            where={"document_id": "service_sw_guide_2025"}, include=[]).get("ids") or []
+        assert not ids, f"{name}: 제외 대상 청크 {len(ids)}건이 코퍼스에 있다(재색인 사고?)"
+
+
+def test_sw_guide_indexer_is_fail_closed():
+    """색인 스크립트가 기본 거부여야 한다 — 필터 뒤에 숨지 말고 입구를 막는다."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "tools"
+           / "index_sw_guide_2025.py").read_text(encoding="utf-8")
+    assert "CC_ALLOW_SW_GUIDE_INDEX" in src
+    assert "영구 제외" in src

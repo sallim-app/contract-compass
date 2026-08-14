@@ -6,6 +6,15 @@ ETL 경로(parse_pdf→chunk_document)로 2025.11 버전을 청킹해 public_gui
 
 --dry  : 파싱·청킹만 (인덱싱 안 함, 청크 수·샘플 출력)
 실인덱싱: 기존 2024 청크 삭제 → 2025 upsert → BM25 재구축은 별도(tools/build_bm25_index.py)
+
+⛔ **2026-08-14 결정: 이 문서는 코퍼스에서 영구 제외한다**(사장님 확정, T-2026W33-174).
+   이유: 배포본 PDF의 폰트 cmap이 손상돼 텍스트 레이어가 **판독 불가**다(83쪽에서 한글
+   12자·제어문자 351개, 본문이 "˒߳ݧࡿ" 꼴). 텍스트 재추출로는 살릴 수 없고 OCR만이
+   경로인데, SW 관련 질의는 소프트웨어 진흥법 조문(법령 코퍼스, 오염 0건)으로 커버된다.
+   읽을 수 없는 텍스트를 '근거'로 내놓는 것은 인용이 아니라 소음이다(기치 ②).
+   그래서 이 스크립트는 **기본적으로 실행을 거부**한다 — 원본 PDF는 되돌릴 근거로 남겨둔다.
+   되돌리려면(OCR로 판독 가능한 PDF를 확보한 뒤): CC_ALLOW_SW_GUIDE_INDEX=1 로 실행하고
+   rag_service._EXCLUDED_SOURCES에서 service_sw_guide_2025를 지운다.
 """
 import json
 import sys
@@ -47,6 +56,17 @@ def build_chunks(pdf: Path) -> list[dict]:
 
 
 def main() -> int:
+    # 영구 제외 결정(T-2026W33-174) — 조용히 색인되지 않게 여기서 막는다. 색인 경로를
+    # 막지 않고 서빙 필터에만 의존하면, 필터를 지나지 않는 소비자(search_knowledge_web
+    # 등)나 다음 재색인에서 판독 불가 텍스트가 되살아난다.
+    import os
+    if os.environ.get("CC_ALLOW_SW_GUIDE_INDEX") != "1":
+        print("⛔ 이 문서는 코퍼스에서 영구 제외됐다(2026-08-14, T-2026W33-174) — "
+              "배포본 PDF의 폰트 cmap 손상으로 텍스트가 판독 불가다.")
+        print("   OCR로 판독 가능한 PDF를 확보해 되돌리려면 CC_ALLOW_SW_GUIDE_INDEX=1로 "
+              "실행하고 rag_service._EXCLUDED_SOURCES에서도 해당 항목을 지워라.")
+        return 2
+
     pdf = find_pdf()
     if pdf is None:
         print(f"공공SW사업 가이드 2025 PDF를 찾지 못했습니다: {SOURCE_DOCS_DIR}/{PDF_GLOB}")
