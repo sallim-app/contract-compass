@@ -123,6 +123,73 @@ def _classify_source(document_id: str) -> str:
     return "guide"
 
 
+
+# ── 추출 품질 게이트 (T-2026W32-161, 2026-08-14) ────────────────────────────
+# 코퍼스 전수 스캔으로 특정한 손상 문서 2종. 법령(law_articles 8,953청크)·예규
+# (admin_rules 1,345청크)는 오염 0건이라 핵심 근거는 온전하고, 손상은 PDF 가이드류다.
+#
+#  ① service_sw_guide_2025 — public_guides 56청크 **전부** 폰트 인코딩 깨짐(cmap 미적용):
+#     "ᛜᛜ6:⪓⾬ㄿ ᛧ⎓oᗷᶬ…" 처럼 글자 자체가 판독 불가다. 경고를 달 대상이 아니라
+#     **뺄** 대상 — 읽을 수 없는 텍스트를 '근거'로 내놓는 것은 인용이 아니라 소음이다.
+#  ② general_감사원공공계 — 842청크 중 621건에 BEL(0x07) 등 제어문자 + 2단 편집 원문의
+#     행교차(다른 단 문장이 문단 중간에 끼어든다). 실무 선례가 실린 유일한 축이라
+#     빼면 손실이 크다 → **세정 + 품질 경고 부착**으로 남긴다.
+#
+# 되돌리기: _EXCLUDED_SOURCES를 비우면 즉시 원복(재색인 불필요).
+_EXCLUDED_SOURCES = {
+    "service_sw_guide_2025": "PDF 폰트 인코딩 손상으로 본문 판독 불가(전 청크) — 재추출 전까지 제외",
+}
+_DEGRADED_SOURCES = {
+    "general_감사원공공계": "2단 편집 PDF 추출본 — 다른 단의 문장이 문단 중간에 섞일 수 있다. "
+                       "문장이 끊기거나 앞뒤가 안 맞으면 그 부분은 인용하지 말고 원문(감사원 "
+                       "「공공계약 실무가이드」)을 확인하라.",
+}
+_CTRL_RE = re.compile("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u200b-\u200f\u202a-\u202e\ufeff]")
+
+
+def _match_source(did: str, table: dict) -> str | None:
+    """document_id ↔ 원본 문서 대응. 같은 PDF가 컬렉션마다 접두어를 달고 들어온다
+    (`general_감사원공공계` / `faq_general_감사원공공계`) — 접두어 때문에 경고가
+    한쪽에만 붙던 것을 부분일치로 맞춘다."""
+    for key in table:
+        if key in did:
+            return key
+    return None
+
+
+def _quality_gate(chunks: list[dict]) -> list[dict]:
+    """판독 불가 문서는 빼고, 손상 문서는 세정 후 품질 경고를 붙인다.
+
+    서빙 시점에 거는 이유: 재색인은 임베딩 비용·시간이 들고, 게이트를 코드에 두면
+    다음 추출 개선이 들어왔을 때 목록만 지우면 원복된다(회귀도 그 형태로 박는다).
+
+    **뺀 것은 뺐다고 말한다**: 검색에 걸렸는데 품질 때문에 버린 청크 수를 첫 청크에
+    `_gate_dropped`로 실어 보내 API가 공시하게 한다(못 봄 ≠ 없음 — 우리가 가진 것을
+    판독 못 해 뺐다는 사실과, 원래 자료가 없다는 것은 다르다).
+    """
+    out: list[dict] = []
+    dropped: dict[str, int] = {}
+    for c in chunks:
+        did = c.get("document_id") or ""
+        excluded = _match_source(did, _EXCLUDED_SOURCES)
+        if excluded:
+            dropped[excluded] = dropped.get(excluded, 0) + 1
+            continue
+        if _CTRL_RE.search(c.get("content") or "") or _CTRL_RE.search(c.get("section_title") or ""):
+            c["content"] = _CTRL_RE.sub(" ", c.get("content") or "")
+            c["section_title"] = _CTRL_RE.sub("", c.get("section_title") or "").strip()
+            c["extraction_quality"] = "control_chars_cleaned"
+        degraded = _match_source(did, _DEGRADED_SOURCES)
+        if degraded:
+            c["extraction_quality"] = "two_column_pdf"
+            c["quality_warning"] = _DEGRADED_SOURCES[degraded]
+        out.append(c)
+    if dropped and out:
+        out[0]["_gate_dropped"] = [{"source": k, "chunks": v, "reason": _EXCLUDED_SOURCES[k]}
+                                   for k, v in dropped.items()]
+    return out
+
+
 class RAGService:
     def __init__(self, chroma_path: str):
         self._client = chromadb.PersistentClient(path=chroma_path)
@@ -913,13 +980,13 @@ class RAGService:
                     all_chunks.sort(key=lambda x: -x.get("_rrf", 0))
                     for c in all_chunks:
                         c.pop("_rrf", None)
-                    return all_chunks[:top_k * 3]
+                    return _quality_gate(all_chunks[:top_k * 3])
             except Exception:
                 pass
 
         # BM25 미사용 시 — dense 점수로 정렬
         all_chunks.sort(key=lambda x: x["relevance_score"], reverse=True)
-        return all_chunks[:top_k * 3]
+        return _quality_gate(all_chunks[:top_k * 3])
 
     @staticmethod
     def _keyword_match(query: str, doc: str) -> bool:

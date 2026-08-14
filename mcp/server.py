@@ -133,7 +133,7 @@ WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idem
 
 # server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
 # 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
-SERVER_VERSION = "1.6.2"
+SERVER_VERSION = "1.6.3"
 
 server = MCPServer(
     name="contract-compass",

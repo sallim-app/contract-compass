@@ -66,6 +66,10 @@
 법령+계약예규+조달청·행안부 적격심사 세부기준(별표 포함)+감사원 실무가이드.
 낙찰하한율·적격심사 배점·부정당 제재기준처럼 **법령 본문 밖** 질의에 사용.
 - 입력: `query`, `top_k`(≤12) · 반환: `{hits: [{source, section, source_type, excerpt, relevance}]}`
+- **추출 품질 공시**(2026-08-14 · 회귀 R60): 손상된 PDF 추출본은 히트에
+  `extraction_quality`(`two_column_pdf`|`control_chars_cleaned`)와 `quality_warning`을 달고
+  온다 — 경고가 붙은 발췌는 끊긴 부분을 인용하지 말고 원문을 확인하라. 판독 불가 문서
+  (폰트 인코딩 손상)는 결과에서 제외되고, 검색에 걸렸다 빠졌으면 `excluded_sources`로 공시한다
 
 ### search_cases — 판례·법령해석례 검색 (law.go.kr 실시간)
 - 입력: `query`(핵심 명사 위주), `top_k`(종류당 ≤10), `kind`("prec"판례|"expc"해석례|"all")

@@ -538,9 +538,21 @@ def search_references(
             "relevance": (round(float(c["_rerank_score"]), 3) if c.get("_rerank_score") is not None
                           else round(float(c.get("relevance_score") or 0), 3)),
             "ranked_by": "rerank" if c.get("_rerank_score") is not None else "hybrid_rrf",
+            # 2026-08-14 T-2026W32-161: 추출이 손상된 원본은 그 사실을 히트에 실어 보낸다 —
+            # 읽을 수 없는 텍스트를 '근거'로 제시하는 것이 이 저장소가 금지하는 은폐다.
+            # 판독 불가 문서(SW 가이드)는 rag_service._quality_gate가 애초에 뺀다.
+            **({"extraction_quality": c["extraction_quality"]}
+               if c.get("extraction_quality") else {}),
+            **({"quality_warning": c["quality_warning"]} if c.get("quality_warning") else {}),
         }
 
-    return [_row(c) for c in chunks[:_want]]
+    rows = [_row(c) for c in chunks[:_want]]
+    # 품질 게이트가 버린 문서가 있으면 공시 — 검색에 걸렸는데 우리가 판독을 못 해 뺀 것과,
+    # 애초에 그런 자료가 없는 것은 다르다(T-2026W32-161).
+    dropped = next((c.get("_gate_dropped") for c in chunks if c.get("_gate_dropped")), None)
+    if dropped and rows:
+        rows[0] = {**rows[0], "excluded_sources": dropped}
+    return rows
 
 
 @router.get("/search", response_model=list[LawSearchHit], response_model_exclude_none=True)

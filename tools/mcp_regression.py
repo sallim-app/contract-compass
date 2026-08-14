@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 import httpx
@@ -451,6 +452,19 @@ CASES = [
      lambda d: (d.get("count", 0) == 0 or
                 (d.get("matched_by") == "semantic_fallback"
                  and "키워드 매치 0건" in (d.get("note_fallback") or "")))),
+    ("R60-추출품질-세정+경고",       # 깨진 PDF 추출본을 검증·경고 없이 '근거'로 내놓던 결함
+     "search_references",          # (T-2026W32-161): 제어문자(BEL)로 시작하는 2단 편집
+     {"query": "낙찰하한율 50억 미만", "top_k": 8},  # 교차 텍스트가 relevance 0.99로 상위에 왔다
+     lambda d: (lambda hits: bool(hits)
+                # ①제어문자는 응답에 남지 않는다 ②손상 문서는 손상됐다고 말한다
+                and not any(re.search("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u200b-\u200f\ufeff]",
+                                      (h.get("excerpt") or "") + (h.get("section") or ""))
+                            for h in hits)
+                and all(h.get("extraction_quality") == "two_column_pdf" and h.get("quality_warning")
+                        for h in hits if "감사원공공계" in (h.get("source") or ""))
+                # ③판독 불가 문서(폰트 인코딩 손상)는 결과에 아예 오지 않는다
+                and not any("sw_guide" in (h.get("source") or "") for h in hits))(
+                    d.get("hits", []))),
     ("R58-문화재공사-전용룰-1순위",   # 공용(센티널) 룰이 전용 룰의 1순위를 뺏던 결함
      "decide_contract_method",       # (T-2026W33-148): 국가 문화재수리 1.8억의 1순위가
      {"contract_type": "construction", "estimated_price": 180000000,  # CST_FIRE_002(소방)
