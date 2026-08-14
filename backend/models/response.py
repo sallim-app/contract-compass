@@ -70,6 +70,9 @@ class Step1Response(BaseModel):
     # F28 (2026-06-10): Step2 화면에서도 Step3와 동일한 결정론 자료 팩 노출.
     # 사용자 의견 "2단계 참조근거가 3단계와 다른데" — 1순위 룰의 decision_pack을 미리 전달.
     decision_pack: dict = {}
+    # 2026-08-14 T-2026W33-158: 노출 상한 3개로 잘린 후보를 실토한다(조용한 절단 금지).
+    # 각 항목 {rule_id, method, summary}. 비어 있으면 잘린 것이 없다는 뜻.
+    omitted_candidates: list[dict] = []
 
 
 class FinalRecommendation(BaseModel):

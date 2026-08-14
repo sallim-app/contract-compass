@@ -230,6 +230,27 @@ CASES = [
      lambda d: (d.get("error") == "article_not_found"
                 and d.get("law_in_corpus") is True
                 and "국가계약법 시행령" in (d.get("message") or ""))),
+    ("R29-공사4억-소액수의-절단금지",  # 노출 상한 3개가 '서로 다른 계약방법 보장'을
+     "decide_contract_method",       # 무력화하던 결함(T-2026W33-158): 매칭 4건 중 3건이
+     {"contract_type": "construction", "estimated_price": 400000000,  # 같은 일반경쟁이라
+      "org_type": "national", "construction_specialty": "general",    # 슬롯을 중복이 채우고
+      "project_name": "회귀검사"},                                      # 유일하게 다른 방법인
+     # 시행령 제26조①5호가목1) 종합공사 4억원 '이하'는 금액만으로 수의 가능 —      # 소액수의
+     # 그 후보가 응답에서 사라지면 적법한 선택지 하나가 통째로 은폐된다.            # (CST_005)가
+     lambda d: any("소액수의" in (c.get("method") or "")                 # priority 200이라
+                   for c in d.get("candidates", []))),                 # 잘려나갔다
+    ("R30-절단-실토",                # 위 상한으로 잘린 후보는 실토해야 한다 — 잘렸다는
+     "decide_contract_method",     # 사실이 없으면 에이전트는 "이 3개가 전부"로 읽는다.
+     {"contract_type": "construction", "estimated_price": 400000000,
+      "org_type": "national", "construction_specialty": "general",
+      "project_name": "회귀검사"},
+     lambda d: (lambda om: isinstance(om, list) and len(om) >= 1
+                and all(o.get("rule_id") and o.get("method") for o in om))(
+                    d.get("omitted_candidates"))),
+    ("R31-top_k-준수",              # search_references가 요청한 top_k의 2배를 반환하던
+     "search_references",          # 결함(T-2026W33-10, 실측 3→6·12→24). 요청과 다른 것을
+     {"query": "적격심사 낙찰하한율 50억 미만", "top_k": 3},  # 주면서 말하지 않는 것은 은폐다.
+     lambda d: len(d.get("hits", [])) <= 3),
 ]
 
 

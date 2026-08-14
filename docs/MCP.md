@@ -26,7 +26,11 @@
   `org_type`("national"|"local"|"public_corp"), 선택: `service_type`,
   `construction_specialty`, `is_sme_competition_product`, `negotiation_reason`
 - 반환: `candidates[]`(method·rule_id·summary·key_params(적격심사 통과점수·낙찰하한율)·
-  legal_basis), `practice_alternatives`, `explanation`(결정론 자료 팩), `laws_applied`
+  legal_basis), `omitted_candidates[]`, `practice_alternatives`, `explanation`(결정론 자료 팩), `laws_applied`
+- **`candidates`는 최대 3건**이다. 상한으로 잘린 후보는 `omitted_candidates`
+  (`{rule_id, method, summary}`)에 실린다 — 비어 있을 때만 "이게 전부"라고 말할 수 있다.
+  슬롯은 **서로 다른 계약방법에 먼저** 배분한다(중복 경쟁룰이 유일한 수의 후보를 밀어내던
+  결함 수리, 2026-08-14 · 회귀 R29·R30)
 - 백엔드 LLM 보조설명은 `skip_llm`으로 생략 — 판정 결과는 동일, 비용 0
 
 ### search_law — 법령 조문 검색

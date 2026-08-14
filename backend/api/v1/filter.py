@@ -333,8 +333,31 @@ async def step1(
                      for r in matched_rules}
     candidates.sort(key=lambda c: rule_priority.get(c.rule_id, 999))
     # F31 (2026-06-10): candidates max 3개 — UI 노출은 1순위+2~3 보조만, INTL 같은 보조 룰이 4번째로 끼면 제외
+    #
+    # 2026-08-14 T-2026W33-158: 이 상한이 **서로 다른 계약방법 보장(위 rules_to_ensure)을
+    # 무력화**하고 있었다. 국가기관 종합공사 4억원 실측: 매칭 4건 중 CST_003·CST_004·
+    # CST_007이 전부 같은 '일반경쟁입찰'(수치도 동일)이라 3슬롯을 중복이 채우고,
+    # 유일하게 **다른** 방법인 CST_005(공사 소액수의 — 시행령 제26조①5호가목1, 종합공사
+    # 4억원 **이하**는 금액만으로 수의 가능)가 priority 200이라 잘려나갔다. 즉 적법한
+    # 계약방법 하나가 응답에서 통째로 사라지고, 잘렸다는 사실조차 공시되지 않았다.
+    # → ①방법이 겹치지 않는 후보에 슬롯을 먼저 준다 ②그래도 잘린 것은 실토한다.
+    # 순위(priority) 자체는 손대지 않는다 — 경계 정확값 규약(_effective_priority)과 직교.
+    omitted_candidates: list[dict] = []
     if len(candidates) > 3:
-        candidates = candidates[:3]
+        kept: list = []
+        seen_methods: set[str] = set()
+        for c in candidates:                      # 1차: 서로 다른 계약방법 우선
+            if len(kept) < 3 and c.method not in seen_methods:
+                kept.append(c)
+                seen_methods.add(c.method)
+        for c in candidates:                      # 2차: 남은 슬롯을 우선순위대로
+            if len(kept) < 3 and c not in kept:
+                kept.append(c)
+        omitted_candidates = [
+            {"rule_id": c.rule_id, "method": c.method, "summary": c.summary}
+            for c in candidates if c not in kept
+        ]
+        candidates = sorted(kept, key=lambda c: rule_priority.get(c.rule_id, 999))
     for new_rank, c in enumerate(candidates, start=1):
         c.rank = new_rank
 
@@ -381,6 +404,12 @@ async def step1(
             top = preferred[0]
             if "자동 고정" not in (top.summary or "") and "주입" not in (top.summary or ""):
                 top.summary = (top.summary or "") + " [중기간 경쟁제품 자동 고정]"
+            # 2026-08-14: 자동 고정으로 화면에서 사라지는 후보도 실토한다 — 의도된 고정이지만
+            # 읽는 쪽(에이전트·사용자)에겐 "이것뿐"으로 보이는 것은 같다.
+            omitted_candidates += [
+                {"rule_id": c.rule_id, "method": c.method, "summary": c.summary}
+                for c in candidates if c.rule_id != top.rule_id
+            ]
             candidates = [top]
             for nc in candidates:
                 nc.rank = 1
@@ -475,6 +504,7 @@ async def step1(
         knowledge_web=kw_model,
         next_step_questions=questions,
         decision_pack=step1_decision_pack,
+        omitted_candidates=omitted_candidates,
     )
 
     try:

@@ -133,7 +133,7 @@ WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idem
 
 # server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
 # 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
-SERVER_VERSION = "1.1.3"
+SERVER_VERSION = "1.2.0"
 
 server = MCPServer(
     name="contract-compass",
@@ -313,6 +313,9 @@ def decide_contract_method(
             }
             for c in d.get("candidates", [])
         ],
+        # 2026-08-14 T-2026W33-158: 노출 상한 3개로 잘린 후보 실토(조용한 절단 금지).
+        # 비어 있으면 잘린 것이 없다는 뜻 — "이 3개가 전부"를 단정할 근거는 이 필드뿐이다.
+        "omitted_candidates": d.get("omitted_candidates", []),
         "practice_alternatives": d.get("practice_alternatives", []),
         "explanation": (d.get("decision_pack") or {}).get("human_explanation", ""),
         "laws_applied": [
