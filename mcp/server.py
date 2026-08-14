@@ -841,7 +841,8 @@ Authorization: Bearer cc_live_...        # 또는 URL 뒤 ?key=cc_live_... (Chat
 <p style="color:#666;font-size:.9rem">데이터 출처: 국가법령정보센터(law.go.kr) Open API·
 기획재정부 계약예규·조달청/행안부 세부기준·감사원 공개 간행물. 모든 응답은 정보 제공
 목적이며 법적 자문이 아닙니다. 도구 명세:
-<a href="https://github.com/sallim-app/contract-compass/blob/master/docs/MCP.md">docs/MCP.md</a></p>
+<a href="https://github.com/sallim-app/contract-compass/blob/master/docs/MCP.md">docs/MCP.md</a> ·
+<a href="https://realty.sallim.app/privacy">개인정보처리방침 · 이용약관</a></p>
 </body></html>"""
 
 
