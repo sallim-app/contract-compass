@@ -14,12 +14,12 @@ export default function HomeDashboard({ onDecision, onAsk, onGlossary }: {
     <div className="home-page">
       <div className="app">
         {/* 상단바 */}
+        {/* 마스트헤드 = 앱 헤더와 같은 문법(감청 괘선 + 워드마크 + mono 부제).
+            v1의 그라데이션 아이콘 배지는 폐기했다(T-2026W33-179). */}
         <div className="topbar">
           <div className="tb-logo">
-            <span className="g">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v3M5.5 7l3.2 6M18.5 7l-3.2 6" /><path d="M3 13h7M14 13h7" /><path d="M9 20h6M12 6v14" /></svg>
-            </span>
-            <span><span className="tt">계약나침반</span><br /><span className="ts">공공계약 방법 결정 도우미</span></span>
+            <span className="tb-rule" aria-hidden="true" />
+            <span><span className="tt">계약나침반</span> <span className="ts">공공계약 방법 결정 도우미</span></span>
           </div>
           <div className="tb-right" style={{ marginLeft: 'auto' }}><AuthButton /></div>
         </div>

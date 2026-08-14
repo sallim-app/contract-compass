@@ -7,11 +7,11 @@
 .app{background:var(--paper);min-height:100%}
 
 /* ----- 글로벌 상단바 ----- */
-.topbar{display:flex;align-items:center;gap:18px;padding:13px 24px;background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar{display:flex;align-items:center;gap:18px;padding:12px 24px;background:var(--surface);border-bottom:1px solid var(--line-2)}
 .tb-logo{display:flex;align-items:center;gap:11px}
-.tb-logo .g{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;background:linear-gradient(150deg,var(--brand-hover),var(--brand-press));box-shadow:0 8px 16px -8px rgba(232,89,12,.6)}
-.tb-logo .tt{font-size:15px;font-weight:800;letter-spacing:-.01em;line-height:1.1}
-.tb-logo .ts{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.tb-logo .tb-rule{width:3px;align-self:stretch;min-height:26px;background:var(--brand);flex:none}
+.tb-logo .tt{font-size:17px;font-weight:700;letter-spacing:-.02em;line-height:1.2;color:var(--ink)}
+.tb-logo .ts{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:4px}
 
 /* 기관 전환기 (tenant switcher) */
 .tenant{display:flex;align-items:center;gap:10px;margin-left:8px;padding:7px 12px 7px 8px;border:1px solid var(--line-2);border-radius:var(--r-pill);background:var(--surface);cursor:pointer}

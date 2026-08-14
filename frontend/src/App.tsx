@@ -526,25 +526,30 @@ export default function App() {
   return (
     <SourceDrawerProvider>
     <div className={`dt-app step-${currentStep}${showHome ? ' home-open' : ''}`}>
+      {/* 머리글 = 문서 마스트헤드(2단): 1단 워드마크+계정, 2단 전폭 진행단계 띠.
+          v1의 '아이콘 배지 + 중앙 스텝퍼' 한 줄 구성은 폐기했다(T-2026W33-179). */}
       <header className="dt-top">
-        <button
-          onClick={() => { window.location.hash = '#home' }}
-          className="dt-brand"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}
-          title="홈으로"
-        >
-          <span className="dt-brand-glyph"><Icon name="scale" size={17} strokeWidth={2.4} /></span>
-          <div className="dt-brand-text">
+        <div className="dt-topbar">
+          <button
+            onClick={() => { window.location.hash = '#home' }}
+            className="dt-brand"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            title="홈으로"
+          >
             <span className="dt-brand-name">계약나침반</span>
             <span className="dt-brand-sub">공공계약 방법 결정 도우미</span>
-          </div>
-        </button>
-        <TopStepper step={Math.min(currentStep, 3)} onJump={jumpStep} />
-        <div className="dt-top-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <AuthButton />
-          <button className="dt-help" onClick={() => setShowFeedback(true)}>
-            <Icon name="message-circle" size={15} /> <span>의견 보내기</span>
           </button>
+          <div className="dt-top-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AuthButton />
+            <button className="dt-help" onClick={() => setShowFeedback(true)}>
+              <Icon name="message-circle" size={15} /> <span>의견 보내기</span>
+            </button>
+          </div>
+        </div>
+        <div className="dt-stepbar">
+          <div className="dt-stepbar-inner">
+            <TopStepper step={Math.min(currentStep, 3)} onJump={jumpStep} />
+          </div>
         </div>
       </header>
 

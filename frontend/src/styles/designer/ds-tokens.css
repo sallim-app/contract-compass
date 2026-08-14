@@ -1,15 +1,18 @@
 /*
-  Zippt AI — Design Tokens
+  계약나침반 — Design Tokens (v2 · 2026-08-15, T-2026W33-179)
   Single source of truth for color, type, spacing, radii, shadows, motion.
-  Extracted from an internal design system.
+
+  시각 정체성 = "공문서/감사 문서": 차가운 종이 · 감청 단일 액션색 ·
+  IBM Plex Sans KR · 각진 모서리. v1(웜 페이퍼 + 오렌지 + Pretendard +
+  둥근 모서리)은 다른 조직 제출물과 동일한 시안이라 전면 교체했다.
+  값 원복 금지 — 변수 이름만 v1과 호환된다.
 
   Usage:
-    @import url("./colors_and_type.css");
     body { background: var(--bg-primary); color: var(--text-primary); }
 
   Naming:
     --bg-* / --text-* / --border-*       semantic surface tokens
-    --accent-*                           single brand orange
+    --accent-*                           single brand navy
     --text-{xs|sm|...}                   type scale (rem)
     --radius-{sm|md|...}                 corner radius scale
     --shadow-{sm|md|...}                 elevation ladder
@@ -19,20 +22,20 @@
 */
 
 /* ───────────────────────── Fonts ───────────────────────── */
-/* Pretendard — the de facto premium Korean font (Inter-based, optimized
-   for mixed Hangul + Latin). Used by Toss, Naver, etc. Replaces Inter +
-   Apple SD Gothic Neo / Noto Sans KR stack with a single coherent family. */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
+/* IBM Plex Sans KR — 국문·영문을 한 가족으로 덮는 기관 문서용 서체.
+   숫자·조문번호는 JetBrains Mono(tabular)로 고정폭 처리한다.
+   (design-tokens.css가 같은 @import를 갖는다 — 어느 파일이 먼저 로드돼도
+   서체가 비지 않게 하려는 의도적 중복. 브라우저가 URL 단위로 합친다.) */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
 
 :root {
   /* Font stacks ------------------------------------------------------ */
-  --font-sans: "Pretendard Variable", Pretendard, -apple-system,
-    BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
-  /* Korean text uses the same stack — Pretendard handles both scripts. */
+  --font-sans: "IBM Plex Sans KR", "Noto Sans KR", -apple-system,
+    BlinkMacSystemFont, "Malgun Gothic", "Segoe UI", Roboto, Arial, sans-serif;
+  /* Korean text uses the same stack — Plex Sans KR handles both scripts. */
   --font-kr: var(--font-sans);
-  --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Mono",
-    "Roboto Mono", Consolas, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
 
   /* Type scale (rem, 1rem = 16px) ----------------------------------- */
   --text-xs: 0.75rem;     /* 12 */
@@ -60,45 +63,45 @@
   --tracking-widest: 0.16em;  /* uppercase eyebrows */
 
   /* ───────── Color — Light (canonical) ───────── */
-  --bg-primary: #fafaf7;      /* warm cream — softer than slate-50 */
+  --bg-primary: #f2f5f7;      /* cool paper — 공문서 용지 */
   --bg-secondary: #ffffff;    /* cards, surfaces */
-  --bg-tertiary: #f3f1ec;     /* warm tertiary */
-  --bg-card: rgba(255, 255, 255, 0.82);
+  --bg-tertiary: #e9eef2;     /* sunken — 입력·표 헤더 */
+  --bg-card: rgba(255, 255, 255, 0.94);
 
-  --text-primary: #18181b;    /* warm near-black (zinc 900) */
-  --text-secondary: #3f3f46;  /* zinc 700 */
-  --text-tertiary: #52525b;   /* zinc 600 */
-  --text-quaternary: #a1a1aa; /* zinc 400 */
+  --text-primary: #10161c;    /* cool near-black */
+  --text-secondary: #38424d;
+  --text-tertiary: #5c6772;
+  --text-quaternary: #97a2ad;
   --text-inverse: #ffffff;
 
-  --border-light: #ebe7df;    /* warm hairline */
-  --border-medium: #d4cfc4;
-  --border-strong: #a8a299;
+  --border-light: #dce3e9;    /* cool hairline */
+  --border-medium: #c6cfd8;
+  --border-strong: #a3aeb9;
 
-  --accent-primary: #ea580c;    /* slightly deeper, more sophisticated orange */
-  --accent-secondary: #c2410c;  /* pressed */
-  --accent-highlight: #f97316;  /* gradient top-stop */
+  --accent-primary: #14497a;    /* 감청 — 유일 액션색 (흰 글자 9.0:1) */
+  --accent-secondary: #0e3557;  /* pressed */
+  --accent-highlight: #1c5e9c;  /* 밝은 쪽 — 아이콘·강조 (흰 글자 6.2:1) */
   --accent-foreground: #ffffff;
-  --accent-soft: rgba(234, 88, 12, 0.10);
-  --accent-ring: rgba(234, 88, 12, 0.06);
+  --accent-soft: rgba(20, 73, 122, 0.08);
+  --accent-ring: rgba(20, 73, 122, 0.16);
 
   /* Semantic colors ------------------------------------------------- */
-  --success: #10b981;
-  --success-soft: rgba(16, 185, 129, 0.10);
-  --warning: #f59e0b;
-  --warning-soft: rgba(245, 158, 11, 0.10);
-  --danger: #ef4444;
-  --danger-soft: #fee2e2;
-  --info: #3b82f6;
-  --info-soft: rgba(59, 130, 246, 0.10);
+  --success: #0f6b4f;
+  --success-soft: rgba(15, 107, 79, 0.10);
+  --warning: #96650b;
+  --warning-soft: rgba(150, 101, 11, 0.12);
+  --danger: #b32318;
+  --danger-soft: #f7e7e4;
+  --info: #0e7490;
+  --info-soft: rgba(14, 116, 144, 0.10);
 
-  /* Suggested-action category tints (light) ------------------------- */
-  --cat-trades-bg: #ffedd5;     --cat-trades-fg: #c2410c;  /* orange */
-  --cat-compare-bg: #dbeafe;    --cat-compare-fg: #1d4ed8; /* blue */
-  --cat-analysis-bg: #d1fae5;   --cat-analysis-fg: #047857; /* green */
-  --cat-complex-bg: #f3e8ff;    --cat-complex-fg: #6b21a8;  /* purple */
-  --cat-forecast-bg: #ffe4e6;   --cat-forecast-fg: #be123c; /* rose */
-  --cat-rental-bg: #ccfbf1;     --cat-rental-fg: #0f766e;   /* teal */
+  /* Suggested-action category tints (light) — 보라 계열은 쓰지 않는다 */
+  --cat-trades-bg: #e8eff6;     --cat-trades-fg: #14497a;  /* navy */
+  --cat-compare-bg: #e2f0f4;    --cat-compare-fg: #0a5568; /* teal */
+  --cat-analysis-bg: #e3f1ea;   --cat-analysis-fg: #0b5039; /* green */
+  --cat-complex-bg: #e7eef2;    --cat-complex-fg: #294452;  /* slate */
+  --cat-forecast-bg: #f7e7e4;   --cat-forecast-fg: #7f1d14; /* red */
+  --cat-rental-bg: #f6eedc;     --cat-rental-fg: #6a4406;   /* gold */
 
   /* Spacing scale (4px base) ---------------------------------------- */
   --space-0: 0;
@@ -113,30 +116,33 @@
   --space-12: 3rem;     /* 48 */
   --space-16: 4rem;     /* 64 */
 
-  /* Radii (squircle-feeling) ---------------------------------------- */
-  --radius-sm: 0.375rem;   /* 6 */
-  --radius-md: 0.5rem;     /* 8 */
-  --radius-lg: 0.75rem;    /* 12 */
-  --radius-xl: 1rem;       /* 16 */
-  --radius-2xl: 1.5rem;    /* 24 */
-  --radius-3xl: 1.75rem;   /* 28 — signature input curve */
-  --radius-full: 9999px;
+  /* Radii (각진 문서 모서리 — v1의 squircle 스케일을 폐기) --------------- */
+  --radius-sm: 0.125rem;   /* 2 */
+  --radius-md: 0.1875rem;  /* 3 */
+  --radius-lg: 0.3125rem;  /* 5 */
+  --radius-xl: 0.375rem;   /* 6 */
+  --radius-2xl: 0.5rem;    /* 8 */
+  --radius-3xl: 0.625rem;  /* 10 */
+  /* 알약 모양은 이 정체성에 없다 — 원형이 꼭 필요한 자리(아바타)만 --radius-round */
+  --radius-full: 0.375rem; /* 6 */
+  --radius-round: 9999px;
 
-  /* Asymmetric chat bubble corners */
-  --radius-msg-user: 1.25rem 1.25rem 0.5rem 1.25rem;
-  --radius-msg-bot:  1.25rem 1.25rem 1.25rem 0.5rem;
+  /* Chat bubble corners — 대칭·각짐 */
+  --radius-msg-user: 0.375rem;
+  --radius-msg-bot:  0.375rem;
 
-  /* Shadows (elevation) --------------------------------------------- */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1),
-               0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1),
-               0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1),
-               0 8px 10px -6px rgb(0 0 0 / 0.1);
-  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
-  --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
-  --shadow-orange: 0 8px 24px -6px rgba(249, 115, 22, 0.35);
+  /* Shadows (elevation) — 무채색·얕게. 색 글로우는 쓰지 않는다 --------- */
+  --shadow-sm: 0 1px 1px 0 rgba(16, 22, 28, 0.05);
+  --shadow-md: 0 2px 4px -2px rgba(16, 22, 28, 0.10),
+               0 1px 2px -1px rgba(16, 22, 28, 0.06);
+  --shadow-lg: 0 8px 18px -10px rgba(16, 22, 28, 0.22),
+               0 2px 4px -2px rgba(16, 22, 28, 0.08);
+  --shadow-xl: 0 16px 32px -16px rgba(16, 22, 28, 0.26),
+               0 4px 8px -4px rgba(16, 22, 28, 0.10);
+  --shadow-2xl: 0 24px 48px -20px rgba(16, 22, 28, 0.34);
+  --shadow-glass: 0 4px 16px -8px rgba(16, 22, 28, 0.14);
+  /* v1의 오렌지 글로우 자리 — 무채색 융기로 대체(이름은 참조 호환용으로 유지) */
+  --shadow-raise: 0 1px 2px -1px rgba(16, 22, 28, 0.18);
 
   /* Motion ---------------------------------------------------------- */
   --duration-fast: 150ms;
@@ -155,28 +161,28 @@
 
 /* ───────────────────────── Dark Mode ───────────────────────── */
 .dark, [data-theme="dark"] {
-  --bg-primary: #0c0a09;       /* warm true-black (stone 950) */
-  --bg-secondary: #1c1917;     /* stone 900 */
-  --bg-tertiary: #292524;      /* stone 800 */
-  --bg-card: rgba(28, 25, 23, 0.78);
+  --bg-primary: #0b1116;       /* cool near-black */
+  --bg-secondary: #151d24;
+  --bg-tertiary: #1e2831;
+  --bg-card: rgba(21, 29, 36, 0.88);
 
-  --text-primary: #fafaf7;     /* warm off-white */
-  --text-secondary: #d4d4d8;
-  --text-tertiary: #a8a29e;
-  --text-quaternary: #78716c;
+  --text-primary: #eef2f5;
+  --text-secondary: #c6ced6;
+  --text-tertiary: #9aa5af;
+  --text-quaternary: #6d7883;
 
-  --border-light: rgba(255, 250, 240, 0.07);
-  --border-medium: rgba(255, 250, 240, 0.13);
-  --border-strong: rgba(255, 250, 240, 0.22);
+  --border-light: rgba(226, 236, 245, 0.08);
+  --border-medium: rgba(226, 236, 245, 0.14);
+  --border-strong: rgba(226, 236, 245, 0.24);
 
-  --accent-primary: #fb923c;   /* lift accent slightly on dark for warmth */
-  --accent-secondary: #f97316;
-  --accent-highlight: #fbbf24;
+  --accent-primary: #6fa8dc;   /* 어두운 면에서는 감청을 밝게 들어올린다 */
+  --accent-secondary: #a8c8e6;
+  --accent-highlight: #8bbbe6;
 
-  --shadow-sm: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 12px 30px -4px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
-  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 6px -2px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 8px 20px -8px rgba(0, 0, 0, 0.62);
+  --shadow-lg: 0 18px 36px -18px rgba(0, 0, 0, 0.70);
+  --shadow-glass: 0 6px 20px -10px rgba(0, 0, 0, 0.55);
 }
 
 /* ───────────────────────── Base ───────────────────────── */
@@ -192,7 +198,6 @@ body {
   color: var(--text-primary);
   font-size: var(--text-base);
   line-height: var(--leading-relaxed);
-  font-feature-settings: "ss01", "ss02";  /* Pretendard stylistic sets */
 }
 
 /* ───────────────────────── Semantic Type ───────────────────────── */

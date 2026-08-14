@@ -8,12 +8,12 @@ import Icon from '../Icon'
 // Tone 매핑 — semantic 의미 → CSS 변수 묶음
 // ───────────────────────────────────────────────────────────────
 export const TONES: Record<string, { fg: string; bg: string; solid: string; line: string }> = {
-  accent:  { fg: 'var(--accent-primary)', bg: 'var(--accent-soft)',    solid: 'var(--accent-primary)', line: 'rgba(234,88,12,0.25)' },
-  success: { fg: 'var(--success)',        bg: 'var(--success-soft)',   solid: 'var(--success)',        line: 'rgba(16,185,129,0.28)' },
-  warning: { fg: '#b45309',               bg: 'var(--warning-soft)',   solid: 'var(--warning)',        line: 'rgba(245,158,11,0.30)' },
-  danger:  { fg: 'var(--danger)',         bg: 'var(--danger-soft)',    solid: 'var(--danger)',         line: 'rgba(239,68,68,0.28)' },
-  info:    { fg: 'var(--cat-compare-fg)', bg: 'var(--cat-compare-bg)', solid: 'var(--info)',           line: 'rgba(59,130,246,0.28)' },
-  purple:  { fg: 'var(--cat-complex-fg)', bg: 'var(--cat-complex-bg)', solid: '#7c3aed',               line: 'rgba(124,58,237,0.26)' },
+  accent:  { fg: 'var(--accent-primary)', bg: 'var(--accent-soft)',    solid: 'var(--accent-primary)', line: 'rgba(20,73,122,0.25)' },
+  success: { fg: 'var(--success)',        bg: 'var(--success-soft)',   solid: 'var(--success)',        line: 'rgba(15,107,79,0.28)' },
+  warning: { fg: 'var(--med-ink)',               bg: 'var(--warning-soft)',   solid: 'var(--warning)',        line: 'rgba(150,101,11,0.30)' },
+  danger:  { fg: 'var(--danger)',         bg: 'var(--danger-soft)',    solid: 'var(--danger)',         line: 'rgba(179,35,24,0.28)' },
+  info:    { fg: 'var(--cat-compare-fg)', bg: 'var(--cat-compare-bg)', solid: 'var(--info)',           line: 'rgba(14,116,144,0.28)' },
+  purple:  { fg: 'var(--cat-complex-fg)', bg: 'var(--cat-complex-bg)', solid: '#3F5B6B',               line: 'rgba(63,91,107,0.26)' },
   rose:    { fg: 'var(--cat-forecast-fg)',bg: 'var(--cat-forecast-bg)',solid: '#e11d48',               line: 'rgba(225,29,72,0.26)' },
   neutral: { fg: 'var(--text-tertiary)',  bg: 'var(--bg-tertiary)',    solid: 'var(--text-tertiary)',  line: 'var(--border-medium)' },
 }

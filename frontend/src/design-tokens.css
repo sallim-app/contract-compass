@@ -1,39 +1,43 @@
 /* ============================================================
-   계약방법 적정성 자가점검 AI — 통합 디자인 토큰
-   출처: 디자이너 핸드오프 docs/design/design_handoff_contract_ai_uiux/redesign/system.css
-   (값 그대로 이식 — 임의 변경 금지). 단일 액션색 = 브랜드 오렌지, 의미색 = 심각도 전용.
+   계약나침반 — 시각 정체성 토큰 (v2 · 2026-08-15, T-2026W33-179)
+   "공문서/감사 문서" 언어: 차가운 종이 · 감청(deep navy) 단일 액션색 ·
+   IBM Plex Sans KR · 각진 모서리(2~6px). 이전 v1(웜 페이퍼 + 오렌지 +
+   Pretendard + 12~22px 라운드)은 **다른 조직의 제출물과 동일한 시안**이라
+   전면 교체했다 — 값을 되돌리지 마라(교체 사유가 디자인 취향이 아니다).
+   변수 이름은 v1과 동일하게 유지한다(전 화면이 이 이름을 참조).
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 :root {
-  /* 종이/표면 (warm paper) */
-  --paper: #FAF8F4; --paper-2: #F3EFE8;
-  --surface: #FFFFFF; --surface-2: #F6F2EC; --surface-3: #EFE9E0;
-  /* 잉크 (warm slate) */
-  --ink: #1D1813; --ink-2: #5B544A; --ink-3: #938A7C; --ink-4: #B7AE9F;
+  /* 종이/표면 (cool paper) */
+  --paper: #F2F5F7; --paper-2: #E8EDF1;
+  --surface: #FFFFFF; --surface-2: #F5F7F9; --surface-3: #E9EEF2;
+  /* 잉크 (cool slate) */
+  --ink: #10161C; --ink-2: #38424D; --ink-3: #5C6772; --ink-4: #97A2AD;
   /* 라인 */
-  --line: #E8E1D6; --line-2: #DCD3C5; --line-strong: #C9BFAE;
-  /* 브랜드 오렌지 (앱 전체 유일 액션색) */
-  --brand: #E8590C; --brand-press: #C2410C; --brand-hover: #F26B1E;
-  --brand-tint: #FDEEE2; --brand-tint-2: #FBE0CD; --brand-ink: #9A3A06;
+  --line: #DCE3E9; --line-2: #C6CFD8; --line-strong: #A3AEB9;
+  /* 브랜드 감청 (앱 전체 유일 액션색) */
+  --brand: #14497A; --brand-press: #0E3557; --brand-hover: #1C5E9C;
+  --brand-tint: #E8EFF6; --brand-tint-2: #D3E1EF; --brand-ink: #0E3557;
   /* 심각도 / 의미색 (오직 리스크·상태 의미에만) */
-  --high: #D43A2C; --high-tint: #FBE8E5; --high-ink: #9F2017;
-  --med: #C07A00; --med-tint: #FAF0D9; --med-ink: #7E5200;
-  --safe: #1C8A5A; --safe-tint: #E2F2EA; --safe-ink: #136241;
-  --info: #2563C9; --info-tint: #E8EEFB; --info-ink: #1A4793;
-  --violet: #6E48C9; --violet-tint: #EFE9FB; --violet-ink: #4A2D94;
-  /* 그림자 */
-  --sh-1: 0 1px 2px rgba(35,25,15,.05);
-  --sh-2: 0 2px 8px -2px rgba(35,25,15,.08), 0 1px 2px rgba(35,25,15,.05);
-  --sh-3: 0 12px 32px -12px rgba(35,25,15,.18), 0 2px 6px -2px rgba(35,25,15,.07);
-  --sh-pop: 0 24px 60px -20px rgba(35,25,15,.30);
-  /* 반경 */
-  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px; --r-pill: 999px;
+  --high: #B32318; --high-tint: #F7E7E4; --high-ink: #7F1D14;
+  --med: #96650B; --med-tint: #F6EEDC; --med-ink: #6A4406;
+  --safe: #0F6B4F; --safe-tint: #E3F1EA; --safe-ink: #0B5039;
+  --info: #0E7490; --info-tint: #E2F0F4; --info-ink: #0A5568;
+  /* v1의 보라 자리 — 슬레이트 청록으로 대체(보라는 쓰지 않는다) */
+  --violet: #3F5B6B; --violet-tint: #E7EEF2; --violet-ink: #294452;
+  /* 그림자 (무채색·얕게 — 문서면은 떠 있지 않다) */
+  --sh-1: 0 1px 1px rgba(16,22,28,.05);
+  --sh-2: 0 1px 2px rgba(16,22,28,.07), 0 1px 1px rgba(16,22,28,.04);
+  --sh-3: 0 6px 16px -8px rgba(16,22,28,.20), 0 1px 3px -1px rgba(16,22,28,.08);
+  --sh-pop: 0 18px 40px -18px rgba(16,22,28,.32);
+  /* 반경 — 각진 문서 모서리 */
+  --r-sm: 2px; --r-md: 3px; --r-lg: 5px; --r-xl: 6px; --r-pill: 6px;
   /* 폰트 */
-  --sans: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sans: 'IBM Plex Sans KR', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Malgun Gothic', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   /* 타입 스케일 (최소 본문 14px — 공공·감사 가독성) */
-  --t-display: 40px; --t-h1: 28px; --t-h2: 22px; --t-h3: 18px;
+  --t-display: 34px; --t-h1: 26px; --t-h2: 20px; --t-h3: 17px;
   --t-body-lg: 16px; --t-body: 15px; --t-body-sm: 14px; --t-cap: 13px;
 
   /* ── 기존 코드 호환 별칭 (이전 var(--bg-*) 참조를 신규 토큰에 매핑) ── */

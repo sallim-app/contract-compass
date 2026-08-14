@@ -150,7 +150,7 @@ export default function ProductClassifySection({
             <div
               style={{
                 background: outOfSpec ? 'var(--bg-tertiary)' : 'var(--success-soft)',
-                border: outOfSpec ? '1px solid var(--border-light)' : '1px solid rgba(16,185,129,0.28)',
+                border: outOfSpec ? '1px solid var(--border-light)' : '1px solid rgba(15,107,79,0.28)',
                 borderRadius: 10,
                 padding: 12,
                 marginBottom: 10,

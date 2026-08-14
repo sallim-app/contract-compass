@@ -8,12 +8,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 디자이너(Zippt AI) 토큰을 글로벌에 적용 — Pretendard·디자인 시스템 일관 */
+/* 정체성 토큰을 글로벌에 적용 — IBM Plex Sans KR (v2, T-2026W33-179) */
 html, body, #root {
-  font-family: var(--font-sans, "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif);
+  font-family: var(--font-sans, "IBM Plex Sans KR", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif);
 }
 
 body {
-  background-color: var(--bg-primary, #f8fafc);
-  color: var(--text-primary, #0f172a);
+  background-color: var(--bg-primary, #f2f5f7);
+  color: var(--text-primary, #10161c);
 }

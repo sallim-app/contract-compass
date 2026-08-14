@@ -44,7 +44,7 @@
   transition: all var(--duration-fast) var(--ease-out);
   white-space: nowrap;
 }
-.empty-action:hover { background: rgba(234, 88, 12, 0.14); }
+.empty-action:hover { background: rgba(20,73,122, 0.14); }
 
 .err-code {
   font-family: var(--font-mono);

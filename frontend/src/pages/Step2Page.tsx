@@ -384,7 +384,7 @@ export default function Step2Page() {
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700,
               background: 'var(--brand)', color: 'white', border: 'none',
-              cursor: 'pointer', boxShadow: '0 2px 6px rgba(61,102,196,0.25)',
+              cursor: 'pointer', boxShadow: 'var(--sh-2)',
             }}
           >
             <Icon name="search" size={14} /> 중기간 경쟁제품 웹 검색
@@ -450,7 +450,7 @@ export default function Step2Page() {
         {needsSmeFirst && (
           <div style={{
             marginBottom: 10, padding: '8px 12px',
-            background: 'var(--warning-soft)', border: '1px solid rgba(245,158,11,0.30)',
+            background: 'var(--warning-soft)', border: '1px solid rgba(150,101,11,0.30)',
             borderRadius: 8, fontSize: 12, color: 'var(--med-ink)',
           }}>
             💡 ① 중기간 경쟁제품 판정을 먼저 확정하면 계약방법이 더 정확해집니다. (현재는 '미해당' 가정으로 표시 중)
@@ -459,7 +459,7 @@ export default function Step2Page() {
         {/* 2026-06-02 F7-1 / F8-1 정정: 계약방법(7조 + 43조) vs 낙찰자결정(42조) 정확 분리 */}
         <div style={{
           marginBottom: 10, padding: '8px 12px',
-          background: 'var(--cat-compare-bg)', border: '1px solid rgba(59,130,246,0.20)',
+          background: 'var(--cat-compare-bg)', border: '1px solid rgba(14,116,144,0.20)',
           borderRadius: 8, fontSize: 11, color: 'var(--cat-compare-fg)',
           display: 'flex', gap: 10, alignItems: 'flex-start',
         }}>
@@ -533,13 +533,13 @@ export default function Step2Page() {
           return (
             <div style={{
               marginBottom: 10, padding: '10px 12px',
-              background: 'var(--warning-soft)', border: '1px solid rgba(245,158,11,0.35)',
+              background: 'var(--warning-soft)', border: '1px solid rgba(150,101,11,0.35)',
               borderRadius: 10, fontSize: 12, color: 'var(--med-ink)',
             }}>
               ⚠️ <b>실무 관행과 다름</b> — 유사 {cp.n}건 중 <b>{Math.round(cp.top_ratio * 100)}%가 '{cp.top_method}'</b>입니다.
               AI 추천(법령 기준)은 '<b>{c0.method}</b>'지만, 실무 사정에 따라 아래 <b>실무 옵션</b> 또는 <b>④ 제한경쟁</b>에서 변경 가능합니다.
               {/* F36-3 (2026-06-11): 사용자 의견 "실무 불일치일 때 하단에 설명을 추가" — 왜 다른지 사유 1~2줄 */}
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.35)', fontSize: 11.5, lineHeight: 1.55, color: 'var(--med-ink)' }}>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(150,101,11,0.35)', fontSize: 11.5, lineHeight: 1.55, color: 'var(--med-ink)' }}>
                 💡 <b>왜 다를까?</b> 법령은 '경쟁' 원칙이라 일반경쟁이 기본이지만, 공공기관 실무에서는 <b>지역경제 활성화·기술 안정성·중기간 보호</b> 사유로 제한경쟁(지역·실적·중기간)을 자주 적용합니다. <br/>
                 → 본 사업도 <b>관련 사유(지역제한·실적제한·중기간 등) 검토</b> 후 4번 섹션에서 선택 가능합니다.
               </div>
@@ -561,7 +561,7 @@ export default function Step2Page() {
                 // F36-4 (2026-06-11): 1순위 카드는 항상 브랜드색 강조 (사용자 의견 "기본 추천 하이라이트 안 됨")
                 style={altSelected ? { opacity: 0.45 } : c.rank === 1 ? {
                   border: '2px solid var(--brand)',
-                  background: 'linear-gradient(180deg, var(--brand-tint) 0%, white 30%)',
+                  background: 'var(--brand-tint)',
                 } : undefined}
                 onClick={() => { setSelectedRuleId(c.rule_id); setSelectedAltKind(null) }}
               >
@@ -895,8 +895,8 @@ export default function Step2Page() {
             {dp.human_explanation && (
               <div style={{
                 marginTop: 16, padding: '14px 18px',
-                background: 'linear-gradient(90deg, var(--brand) 0%, var(--safe-ink) 100%)',
-                color: 'white', borderRadius: 12, boxShadow: '0 6px 20px rgba(61,102,196,0.18)',
+                background: 'var(--brand)',
+                color: 'white', borderRadius: 12, boxShadow: 'var(--sh-2)',
                 fontSize: 15, lineHeight: 1.6, fontWeight: 600,
               }}>
                 🧭 <strong>왜 이 추천인가요?</strong>{' '}
@@ -908,9 +908,9 @@ export default function Step2Page() {
             {hasContent && (
               <details open style={{
                 marginTop: 16, padding: '16px 20px',
-                background: 'linear-gradient(180deg, var(--brand-tint) 0%, #fff 100%)',
+                background: 'var(--brand-tint)',
                 border: '2px solid var(--brand)', borderRadius: 14,
-                boxShadow: '0 4px 16px rgba(61,102,196,0.08)',
+                boxShadow: 'var(--sh-1)',
               }}>
                 <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 900, color: 'var(--ink)' }}>
                   📌 참조규정 — 이 케이스에 적용되는 정확한 법령 조문 (룰엔진 lookup)
@@ -989,7 +989,7 @@ export default function Step2Page() {
 
       {error && (
         <div style={{
-          background: 'var(--danger-soft)', border: '1px solid rgba(239,68,68,0.28)',
+          background: 'var(--danger-soft)', border: '1px solid rgba(179,35,24,0.28)',
           color: 'var(--danger)', padding: '10px 14px', borderRadius: 'var(--radius-lg)',
           fontSize: 'var(--text-xs)', fontWeight: 600,
         }}>{error}</div>
@@ -1006,7 +1006,7 @@ export default function Step2Page() {
         return (
           <div style={{
             marginTop: 4, padding: '10px 14px',
-            background: 'var(--accent-soft)', border: '1px solid rgba(234,88,12,0.25)',
+            background: 'var(--accent-soft)', border: '1px solid rgba(20,73,122,0.25)',
             borderRadius: 10, fontSize: 12, color: 'var(--accent-secondary)',
           }}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>📌 현재 선택 (확정 시 의견서에 반영)</div>

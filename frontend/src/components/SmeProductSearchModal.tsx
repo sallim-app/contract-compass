@@ -46,7 +46,7 @@ export default function SmeProductSearchModal({ open, onClose }: { open: boolean
     <div
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)',
+        position: 'fixed', inset: 0, background: 'rgba(16,22,28,0.55)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9998,
         padding: 16,
       }}
@@ -62,7 +62,7 @@ export default function SmeProductSearchModal({ open, onClose }: { open: boolean
         {/* 헤더 */}
         <div style={{
           padding: '14px 20px', borderBottom: '1px solid var(--line)',
-          background: 'linear-gradient(90deg, var(--brand) 0%, var(--safe-ink) 100%)',
+          background: 'var(--brand)',
           color: 'white', display: 'flex', alignItems: 'center', gap: 10,
         }}>
           <Icon name="database" size={16} />

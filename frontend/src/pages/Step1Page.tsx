@@ -372,7 +372,7 @@ export default function Step1Page() {
 
       {error && (
         <div style={{
-          background: 'var(--danger-soft)', border: '1px solid rgba(239,68,68,0.28)',
+          background: 'var(--danger-soft)', border: '1px solid rgba(179,35,24,0.28)',
           color: 'var(--danger)', padding: '10px 14px', borderRadius: 'var(--radius-lg)',
           fontSize: 'var(--text-xs)', fontWeight: 600,
         }}>{error}</div>

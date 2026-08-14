@@ -261,10 +261,10 @@ export default function Step3Page() {
         <div style={{
           marginTop: 16,
           padding: '14px 18px',
-          background: 'linear-gradient(90deg, var(--brand) 0%, var(--safe-ink) 100%)',
+          background: 'var(--brand)',
           color: 'white',
           borderRadius: 12,
-          boxShadow: '0 6px 20px rgba(61,102,196,0.18)',
+          boxShadow: 'var(--sh-2)',
           fontSize: 15,
           lineHeight: 1.6,
           fontWeight: 600,
@@ -283,10 +283,10 @@ export default function Step3Page() {
         <details open style={{
           marginTop: 16,
           padding: '16px 20px',
-          background: 'linear-gradient(180deg, var(--brand-tint) 0%, #fff 100%)',
+          background: 'var(--brand-tint)',
           border: '2px solid var(--brand)',
           borderRadius: 14,
-          boxShadow: '0 4px 16px rgba(61,102,196,0.08)',
+          boxShadow: 'var(--sh-1)',
         }}>
           <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 900, color: 'var(--ink)' }}>
             📌 참조규정 — 이 케이스에 적용되는 정확한 법령 조문 (룰엔진 lookup)
@@ -340,7 +340,7 @@ export default function Step3Page() {
 
       {/* 중소기업자간 경쟁제품 적용 심사기준 */}
       {step1Input.sme_applicable_standard && (
-        <div className="op-card" style={{ borderColor: 'rgba(124,58,237,0.26)', background: 'var(--cat-complex-bg)' }}>
+        <div className="op-card" style={{ borderColor: 'rgba(63,91,107,0.26)', background: 'var(--cat-complex-bg)' }}>
           <p className="op-card-title" style={{ color: 'var(--cat-complex-fg)' }}>
             <Icon name="landmark" size={14} style={{ color: 'var(--cat-complex-fg)' }} />
             적용 심사기준 (중소기업자간 경쟁제품)
@@ -348,7 +348,7 @@ export default function Step3Page() {
             {(step1Input.sme_product_codes && step1Input.sme_product_codes.length > 0) ? (
               <span style={{ marginLeft: 6, display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
                 {step1Input.sme_product_codes.map((code, i) => (
-                  <span key={code} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--cat-complex-fg)', fontWeight: 600, background: 'rgba(124,58,237,0.08)', padding: '1px 6px', borderRadius: 4 }}>
+                  <span key={code} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--cat-complex-fg)', fontWeight: 600, background: 'rgba(63,91,107,0.08)', padding: '1px 6px', borderRadius: 4 }}>
                     {code}{step1Input.sme_product_names?.[i] ? ` (${step1Input.sme_product_names[i]})` : ''}
                   </span>
                 ))}
@@ -432,7 +432,7 @@ export default function Step3Page() {
 
       {/* PQ 사전심사 */}
       {!!details.pq_required && (
-        <div className="op-card" style={{ background: 'var(--cat-compare-bg)', borderColor: 'rgba(59,130,246,0.28)' }}>
+        <div className="op-card" style={{ background: 'var(--cat-compare-bg)', borderColor: 'rgba(14,116,144,0.28)' }}>
           <p className="op-card-title" style={{ color: 'var(--cat-compare-fg)' }}>
             <Icon name="alert-triangle" size={14} style={{ color: 'var(--cat-compare-fg)' }} /> PQ 사전심사 필수
           </p>
@@ -453,7 +453,7 @@ export default function Step3Page() {
 
       {/* 전문공사 라이선스 */}
       {!!details.license_required && (
-        <div className="op-card" style={{ background: 'var(--danger-soft)', borderColor: 'rgba(239,68,68,0.28)' }}>
+        <div className="op-card" style={{ background: 'var(--danger-soft)', borderColor: 'rgba(179,35,24,0.28)' }}>
           <p className="op-card-title" style={{ color: 'var(--danger)' }}>
             <Icon name="alert-triangle" size={14} style={{ color: 'var(--danger)' }} /> 전문공사 필수 확인 사항
           </p>
@@ -479,7 +479,7 @@ export default function Step3Page() {
 
       {/* 공공구매 의무 */}
       {public_procurement_obligations.length > 0 && (
-        <div className="op-card" style={{ background: 'var(--warning-soft)', borderColor: 'rgba(245,158,11,0.30)' }}>
+        <div className="op-card" style={{ background: 'var(--warning-soft)', borderColor: 'rgba(150,101,11,0.30)' }}>
           <p className="op-card-title" style={{ color: 'var(--med-ink)' }}>
             <Icon name="clipboard-check" size={14} style={{ color: 'var(--med-ink)' }} /> 공공구매 의무 확인
           </p>

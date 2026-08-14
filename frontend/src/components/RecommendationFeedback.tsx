@@ -97,7 +97,7 @@ export default function RecommendationFeedback({
           style={{
             flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 700,
             background: 'var(--success-soft)', color: 'var(--success)',
-            border: '1px solid rgba(16,185,129,0.28)', borderRadius: 8,
+            border: '1px solid rgba(15,107,79,0.28)', borderRadius: 8,
             cursor: sending ? 'wait' : 'pointer', fontFamily: 'inherit',
             display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center',
           }}
@@ -111,7 +111,7 @@ export default function RecommendationFeedback({
           style={{
             flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 700,
             background: 'var(--warning-soft)', color: 'var(--med-ink)',
-            border: '1px solid rgba(245,158,11,0.30)', borderRadius: 8,
+            border: '1px solid rgba(150,101,11,0.30)', borderRadius: 8,
             cursor: sending ? 'wait' : 'pointer', fontFamily: 'inherit',
             display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center',
           }}

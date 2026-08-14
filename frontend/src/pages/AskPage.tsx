@@ -267,7 +267,7 @@ function AssistantBubble({
           <div
             style={{
               background: 'var(--warning-soft)',
-              border: '1px solid rgba(245,158,11,0.35)',
+              border: '1px solid rgba(150,101,11,0.35)',
               borderRadius: 10,
               padding: '8px 12px',
               marginBottom: 8,
