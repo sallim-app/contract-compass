@@ -514,6 +514,23 @@ async def step1(
                   "국가기관·지자체는 기획재정부 고시금액을 확인하세요."
             ).strip()
 
+    # 최종 공시: **매칭됐지만 화면에 없는 룰 전부**를 실토한다(2026-08-14 보강).
+    # 종전엔 노출 상한(3개) 단계에서만 계산했는데, 그 앞에 또 다른 절단이 있었다 —
+    # LLM 폴백 후보가 `matched_rules[:3]`로 만들어지므로 4번째 룰은 상한에 닿기도 전에
+    # 사라져 omitted에도 안 남았다(실측: 종합공사 4억에서 CST_007이 조용히 빠졌다).
+    # 절단 지점이 어디든 "안 보여준 것"은 같은 사실이라, 후보 확정 후 차집합으로 낸다.
+    _shown = {c.rule_id for c in candidates}
+    _seen_omitted = {o.get("rule_id") for o in omitted_candidates}
+    for r in matched_rules:
+        rid = r.get("rule_id")
+        if rid and rid not in _shown and rid not in _seen_omitted:
+            omitted_candidates.append({
+                "rule_id": rid,
+                "method": _rule_method(r, req.estimated_price),
+                "summary": r.get("name", ""),
+            })
+            _seen_omitted.add(rid)
+
     response = Step1Response(
         session_id=session_id,
         candidates=candidates,

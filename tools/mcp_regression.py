@@ -457,6 +457,21 @@ CASES = [
      lambda d: (d.get("count", 0) == 0 or
                 (d.get("matched_by") == "semantic_fallback"
                  and "키워드 매치 0건" in (d.get("note_fallback") or "")))),
+    ("R61-전기공사-1.6억경계-포함",   # 경계 정확값이 '이하' 구간에 들어간다는 규약을 공사 축에도
+     "decide_contract_method",       # 적용한 것의 회귀(T-2026W33-145). 1.59억↔1.6억의 1순위가
+     {"contract_type": "construction", "estimated_price": 160000000,  # 같아야 한다(1원 불연속 금지)
+      "org_type": "national", "construction_specialty": "electrical",
+      "project_name": "회귀검사"},
+     lambda d: (lambda cs: bool(cs) and cs[0].get("rule_id") == "CST_ELEC_003"
+                and "수의" in (cs[0].get("method") or ""))(d.get("candidates", []))),
+    ("R62-전기공사-1.6억초과-경쟁",    # R61의 짝 — 경계를 넘으면 수의가 사라져야 한다.
+     "decide_contract_method",      # 경계 포함 보정이 구간 밖으로 새면 없는 권리를 주게 된다
+     {"contract_type": "construction", "estimated_price": 160000001,
+      "org_type": "national", "construction_specialty": "electrical",
+      "project_name": "회귀검사"},
+     lambda d: (lambda cs: bool(cs) and cs[0].get("rule_id") == "CST_ELEC_002"
+                and not any("소액수의" in (c.get("method") or "") for c in cs))(
+                    d.get("candidates", []))),
     ("R60-추출품질-세정+공시",       # 깨진 PDF 추출본을 검증·경고 없이 '근거'로 내놓던 결함
      "search_references",          # (T-2026W32-161): 제어문자(BEL)로 시작하는 2단 편집 교차
      {"query": "낙찰하한율 50억 미만", "top_k": 8},  # 텍스트가 relevance 0.99로 상위에 왔다.

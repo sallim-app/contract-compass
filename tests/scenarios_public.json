@@ -313,18 +313,18 @@
       ]
     },
     {
-      "desc": "전기공사 1.6억 경계",
+      "desc": "전기공사 1.6억 경계 — 가목1 '1억6천만원 이하'라 경계 포함, 1원 불연속 금지(T-2026W33-145). 종전엔 이 한 점에서만 일반경쟁이 1순위였다",
       "org_type": "public_corp",
       "params": {
         "contract_type": "construction",
         "estimated_price": 160000000,
         "construction_specialty": "electrical"
       },
-      "expect_rule_id": "CST_ELEC_002",
-      "expect_method": "일반경쟁입찰",
+      "expect_rule_id": "CST_ELEC_003",
+      "expect_method": "소액수의계약",
       "expect_top3": [
-        "CST_ELEC_002",
-        "CST_ELEC_003"
+        "CST_ELEC_003",
+        "CST_ELEC_002"
       ]
     },
     {
@@ -356,18 +356,18 @@
       ]
     },
     {
-      "desc": "철강구조물(전문) 2억 경계 — 이하 포함(ELEC 1.6억 경계와 동일 규약)",
+      "desc": "철강구조물(전문) 2억 경계 — 가목1 '2억원 이하' 경계 포함(ELEC 1.6억과 동일 규약, T-2026W33-145로 물품·용역·지방과 대칭 정정)",
       "org_type": "public_corp",
       "params": {
         "contract_type": "construction",
         "estimated_price": 200000000,
         "construction_specialty": "steel_structure"
       },
-      "expect_rule_id": "CST_PRO_002",
-      "expect_method": "일반경쟁입찰",
+      "expect_rule_id": "CST_PRO_003",
+      "expect_method": "소액수의계약",
       "expect_top3": [
-        "CST_PRO_002",
-        "CST_PRO_003"
+        "CST_PRO_003",
+        "CST_PRO_002"
       ]
     },
     {
