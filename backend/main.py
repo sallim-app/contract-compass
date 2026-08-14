@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from backend.config import get_settings, BASE_DIR
 
 logger = logging.getLogger("contract-compass")
-from backend.api.v1 import filter, docs, admin, feedback, ask, glossary, law, classify, status
+from backend.api.v1 import filter, docs, admin, feedback, ask, glossary, law, classify, status, penalty
 
 DIST_DIR = BASE_DIR / "frontend" / "dist"
 
@@ -105,6 +105,7 @@ app.include_router(law.router, prefix="/api/v1")
 app.include_router(classify.router, prefix="/api/v1")
 app.include_router(status.router, prefix="/api/v1")
 app.include_router(status._rules_router, prefix="/api/v1")  # 룰 공개 조회
+app.include_router(penalty.router, prefix="/api/v1")  # 이행단계 — 지체상금·지연배상금
 
 
 @app.on_event("startup")

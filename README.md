@@ -39,6 +39,7 @@
 | `search_references` | 전 코퍼스 통합 검색 — 계약예규·조달청/행안부 적격심사 세부기준(별표)·실무가이드 | ✗ |
 | `search_cases` | 판례·법령해석례 검색 (law.go.kr 실시간 — 항상 현행) | ✗ |
 | `get_case` | 판시사항·판결요지·참조조문 / 질의요지·회답·이유 본문 | ✗ |
+| `estimate_delay_penalty` | **지체상금·지연배상금 산정** — 법정 요율·기준금액·30% 한도 결정론 적용(국가/지방 요율이 다르다) | ✗ |
 | `report_issue` | 오류·개선 제보(오인용·개정 미반영 등) — 운영 검토 파이프라인 직결 | ✗ |
 
 클라이언트 설정:
@@ -94,7 +95,7 @@ python3 tools/mcp_regression.py --endpoint https://contract.sallim.app/mcp
 ```
 backend/    FastAPI — 룰엔진·RAG·LLM 연동 (frontend/dist 정적 서빙 포함, :8402)
 frontend/   React + TypeScript (Vite) — 위저드 UI
-mcp/        MCP 서버 — stdio(로컬) / Streamable HTTP(:8403, 원격) · 무LLM 도구 8종
+mcp/        MCP 서버 — stdio(로컬) / Streamable HTTP(:8403, 원격) · 무LLM 도구 9종
 edge/       Cloudflare Worker (contract-edge) — 장애 폴백 게이트 · law API 엣지 캐시
 rules/      계약 룰셋 JSON (contract_rules·law_registry 등) ← 결정론 핵심
 tools/      법령·예규·별표 수집/인덱싱 파이프라인 (law.go.kr Open API) · 가이드 페이지 생성기

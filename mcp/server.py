@@ -133,7 +133,7 @@ WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idem
 
 # server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
 # 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.3.0"
 
 server = MCPServer(
     name="contract-compass",
@@ -472,6 +472,60 @@ def get_law_article_asof(ref: str, date: str) -> dict:
     if isinstance(d.get("content"), str) and len(d["content"]) > 6000:
         d["content"] = d["content"][:6000] + "…(생략)"
     return d
+
+
+@server.tool(annotations=READ_ONLY)
+def estimate_delay_penalty(
+    contract_kind: Literal["construction", "product_manufacture", "product_repair",
+                           "service", "military_food", "transport_storage"],
+    org_type: Literal["national", "local", "public_corp"],
+    contract_amount: int,
+    delay_days: int,
+    excluded_days: int = 0,
+    accepted_portion_amount: int = 0,
+    design_build_approved: bool = False,
+) -> dict:
+    """지체상금(국가·공기업)·지연배상금(지방) 산정 — 법정 요율·기준금액·30% 한도를 결정론 적용.
+
+    **국가와 지방은 요율이 다르다**(물품 0.75/1000 ↔ 0.8/1000, 용역 1.25/1000 ↔ 1.3/1000)
+    — org_type을 반드시 사용자에게 확인해서 넣어라. 법정 용어도 다르다(국가=지체상금,
+    지방=지연배상금).
+
+    **이 도구는 지체일수를 정하지 않는다.** 준공검사 소요기간·검사 불합격 재검사 기간·
+    발주기관 귀책 일수 같은 것은 사실 판단이다 — delay_days/excluded_days는 사용자가
+    선언한 값으로 계산에 그대로 쓰이고, 응답의 counted_days.disclaimer가 이 사실을 밝힌다.
+    면책 사유 해당 여부가 쟁점이면 search_references로 예규·감사원 실무가이드를 찾아라.
+
+    응답 필드:
+      term/counterpart_term  기관유형에 따른 법정 용어(+반대편 용어)
+      rate                   적용 요율·근거 조문(호까지). inferred=true면 법문이 아니라 우리 해석
+      base_amount            계약금액 − 인수분 산출 내역
+      counted_days           선언 지체일수 − 선언 면책일수
+      amount_raw / cap / amount   한도 적용 전 금액 / 30% 한도 / 최종(한도 적용 후)
+      warnings               미선언 항목·한도 적용·용어 비대칭 등 실토
+      legal_basis            근거 조문 — get_law_article로 원문 확인 가능
+
+    Args:
+        contract_kind: 요율 호와 1:1. "construction"(공사) | "product_manufacture"(물품
+            제조·구매) | "product_repair"(물품 수리·가공·대여) | "service"(용역·기타) |
+            "military_food"(군용 음·식료품) | "transport_storage"(운송·보관·양곡가공)
+        org_type: "national"(국가기관) | "local"(지자체) | "public_corp"(공기업·준정부).
+            **추측 금지** — 요율이 달라 틀린 금액이 된다
+        contract_amount: 계약금액(원). **장기계속계약이면 총액이 아니라 연차별 계약금액**
+        delay_days: 지체일수(총 지체일수 — 면책일수를 포함해서 넣고, 면책분은 아래에 따로)
+        excluded_days: 계약상대자 책임 없는 사유 일수(모르면 0으로 두되 응답 경고를 전달하라)
+        accepted_portion_amount: 검사를 거쳐 인수한 기성·기납 부분 금액(원)
+        design_build_approved: 설계·제조 일괄 + 발주기관 승인이 필요한 물품인지(요율 예외)
+    """
+    return _post("/penalty/delay", {
+        "contract_kind": contract_kind,
+        "org_type": org_type,
+        "contract_amount": contract_amount,
+        "delay_days": delay_days,
+        "excluded_days": excluded_days,
+        "accepted_portion_amount": accepted_portion_amount,
+        "design_build_approved": design_build_approved,
+    })
 
 
 @server.tool(annotations=WRITE_FEEDBACK)

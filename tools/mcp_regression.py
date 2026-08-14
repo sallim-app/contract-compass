@@ -55,7 +55,18 @@ class Session:
         r.raise_for_status()
         line = [l for l in r.text.splitlines() if l.startswith("data:")]
         d = json.loads(line[0][5:]) if line else json.loads(r.text)
-        return json.loads(d["result"]["content"][0]["text"])
+        if "result" not in d:            # JSON-RPC 오류(-32602 등) — 예외로 뭉개지 말고 데이터로
+            err = d.get("error") or {}
+            return {"error": "protocol_error", "code": err.get("code"),
+                    "message": str(err.get("message"))[:500]}
+        text = d["result"]["content"][0]["text"]
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # SDK 인자 스키마 거부(Literal 위반·필수 누락)는 JSON이 아니라 평문으로 온다.
+            # 이것도 정상적인 '거부'이므로 검사 함수가 볼 수 있게 구조화해서 넘긴다 —
+            # 파싱 예외로 죽이면 "조용한 기본값 대신 거부했는가"를 검사할 수 없다.
+            return {"error": "tool_validation_error", "message": text[:500]}
 
 
 CASES = [
@@ -251,6 +262,56 @@ CASES = [
      "search_references",          # 결함(T-2026W33-10, 실측 3→6·12→24). 요청과 다른 것을
      {"query": "적격심사 낙찰하한율 50억 미만", "top_k": 3},  # 주면서 말하지 않는 것은 은폐다.
      lambda d: len(d.get("hits", [])) <= 3),
+
+    # ── 이행단계 축 Phase 1: 지체상금·지연배상금 (T-2026W33-164, 2026-08-14 신설) ──
+    # 기대 금액은 조문 원문(국가 규칙 제75조·영 제74조 / 지방 규칙 제75조·영 제90조)에서
+    # 산식을 직접 적용해 확정했다. 설계·근거표는 docs/DELAY-PENALTY-AXIS.md.
+    ("R32-지체상금-국가공사-요율",     # 공사 1천분의 0.5 — 10억×30일 = 1,500만원
+     "estimate_delay_penalty",
+     {"contract_kind": "construction", "org_type": "national",
+      "contract_amount": 1000000000, "delay_days": 30},
+     lambda d: d.get("amount") == 15000000 and d.get("term") == "지체상금"
+               and d.get("rate", {}).get("value") == 0.0005),
+    ("R33-지연배상금-지방용역-국가요율금지",  # 지방 용역은 1000분의 1.3 (국가 1.25 아님).
+     "estimate_delay_penalty",             # 이 저장소 재발 결함 계열(R15·R16)의 이행단계판 —
+     {"contract_kind": "service", "org_type": "local",   # 국가 수치가 새어들면 3,750,000이 된다
+      "contract_amount": 100000000, "delay_days": 30},
+     lambda d: d.get("amount") == 3900000 and d.get("term") == "지연배상금"
+               and d.get("rate", {}).get("value") == 0.0013),
+    ("R34-한도30%-실토",             # 한도로 깎았으면 원금액과 함께 말해야 한다(조용한 clamp 금지)
+     "estimate_delay_penalty",
+     {"contract_kind": "construction", "org_type": "national",
+      "contract_amount": 100000000, "delay_days": 700},
+     lambda d: (d.get("amount_raw") == 35000000 and d.get("amount") == 30000000
+                and (d.get("cap") or {}).get("applied") is True
+                and any("한도" in w for w in d.get("warnings", [])))),
+    ("R35-인수분공제+면책일수",       # (10억−4억)×0.0005×(40−10일) = 900만원 (영 제74조②·① 후단)
+     "estimate_delay_penalty",
+     {"contract_kind": "construction", "org_type": "national", "contract_amount": 1000000000,
+      "delay_days": 40, "excluded_days": 10, "accepted_portion_amount": 400000000},
+     lambda d: (d.get("amount") == 9000000
+                and (d.get("base_amount") or {}).get("result") == 600000000
+                and (d.get("counted_days") or {}).get("result") == 30)),
+    ("R36-미선언-경고+지체일수-비확정", # 인수분·면책일수 미선언을 조용히 0으로 쓰지 않는다.
+     "estimate_delay_penalty",         # 지체일수는 사실 판단이라 우리가 정하지 않는다는 실토도 필수
+     {"contract_kind": "construction", "org_type": "national",
+      "contract_amount": 100000000, "delay_days": 10},
+     lambda d: (any("인수분" in w for w in d.get("warnings", []))
+                and any("면책일수" in w for w in d.get("warnings", []))
+                and "사실 판단" in ((d.get("counted_days") or {}).get("disclaimer") or ""))),
+    ("R37-기관유형-추측금지",         # 모르는 기관유형에 국가 요율을 조용히 쓰면 지자체 사용자가
+     "estimate_delay_penalty",       # 틀린 금액을 받고도 모른다 — 계산하지 말고 거부해야 한다.
+     {"contract_kind": "construction", "org_type": "무엇"  # 1차 방어선은 Literal 스키마(SDK가
+      , "contract_amount": 100000000, "delay_days": 10},   # 허용값을 알려주며 거부), 2차는
+     lambda d: ("amount" not in d and d.get("error") in (  # 서비스 계층 unknown_org_type.
+         "unknown_org_type", "tool_validation_error", "protocol_error")
+         and ("national" in (d.get("message") or "") or bool(d.get("hint"))))),
+    ("R38-해석요율-실토",             # 지방 규칙엔 군용 음식료품 호가 없어 제2호로 해석했다.
+     "estimate_delay_penalty",       # 해석을 법문인 척 내면 그것이 은폐다 — inferred로 밝힌다
+     {"contract_kind": "military_food", "org_type": "local",
+      "contract_amount": 100000000, "delay_days": 10},
+     lambda d: ((d.get("rate") or {}).get("inferred") is True
+                and any("해석" in w for w in d.get("warnings", [])))),
 ]
 
 

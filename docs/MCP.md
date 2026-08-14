@@ -18,7 +18,7 @@
 3. **구조화 실패** — 오류·한도 초과는 예외가 아니라 `{"error", "message", "hint"}` dict로
    반환된다. 에이전트는 hint의 행동지침을 따르면 된다.
 
-## 도구 명세 (8종)
+## 도구 명세 (9종)
 
 ### decide_contract_method — 계약방법 결정론 판정
 룰엔진(94룰, 국가/지방/공기업 3프로파일)이 적용 가능한 계약방법 후보를 법령 근거와 반환.
@@ -63,6 +63,22 @@
 ### search_cases — 판례·법령해석례 검색 (law.go.kr 실시간)
 - 입력: `query`(핵심 명사 위주), `top_k`(종류당 ≤10), `kind`("prec"판례|"expc"해석례|"all")
 - 반환: `{hits: [{kind, case_id, title, org, case_no, date}]}` — 본문은 get_case로
+
+### estimate_delay_penalty — 지체상금·지연배상금 산정 (이행단계)
+계약 체결 **이후** 축의 첫 판정 도구. 법정 요율·기준금액·30% 한도를 결정론으로 적용한다.
+설계·근거표는 `docs/DELAY-PENALTY-AXIS.md`, 수치의 진실원은 `rules/delay_penalty_rules.json`.
+- 입력: `contract_kind`(construction|product_manufacture|product_repair|service|
+  military_food|transport_storage), `org_type`(**필수** — 국가/지방 요율이 다르다),
+  `contract_amount`(원 · 장기계속은 **연차별** 금액), `delay_days`, 선택:
+  `excluded_days`·`accepted_portion_amount`·`design_build_approved`
+- 반환: `term`(국가=지체상금 / 지방=지연배상금)·`rate`(근거 호까지)·`base_amount`(계약금액
+  −인수분)·`counted_days`(선언 지체−선언 면책)·`amount_raw`·`cap`(30% 한도)·`amount`·
+  `warnings[]`·`legal_basis[]`
+- **이 도구는 지체일수를 정하지 않는다** — 준공검사 소요기간·면책 사유 해당 여부는 사실
+  판단이라 사용자 선언값을 그대로 쓰고 `counted_days.disclaimer`로 밝힌다. 면책 쟁점은
+  `search_references`로 예규·감사원 실무가이드를 찾아 보강하라
+- `rate.inferred:true`면 법문에 명시된 값이 아니라 우리 해석이다(지방 군용 음·식료품) —
+  그대로 단정하지 말고 경고를 함께 전달할 것
 
 ### report_issue — 오류·개선 제보 (유일한 쓰기 도구)
 - 입력: `category`(wrong_citation|outdated_law|wrong_ruling|tool_error|feature_request|other),
