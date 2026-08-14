@@ -47,7 +47,7 @@ async function edgeCached(request, ctx, ttl, produce) {
     return h;
   }
   const resp = await produce();
-  if (resp.status === 200) {
+  if (resp.status === 200 && !(resp.headers.get("Cache-Control") || "").includes("no-store")) {
     const toStore = new Response(resp.clone().body, resp);
     if (ttl) toStore.headers.set("Cache-Control", `public, max-age=${ttl}`);
     if (toStore.headers.get("Cache-Control")?.includes("max-age")) {
@@ -131,6 +131,20 @@ async function drf(env, path, params) {
   }
 }
 
+// ── 판례·해석례 공통 계약 (백엔드 backend/api/v1/law.py와 **문구까지 일치**시킨다) ──
+// 2026-08-14 T-2026W33-171: 이 엣지 파서는 백엔드가 2026-07-30에 고친 "본문 미제공 판례를
+// 빈 필드로 조용히 넘기던 결함"(R9)과 오늘 넣은 source_url을 못 받은 **갈라진 사본**이었다.
+// contract.naru.build만 빈 필드를 24시간 캐시로 서빙했고, 회귀는 localhost만 봐서 무탐지였다.
+// 같은 로직이 두 곳에 있는 한 또 갈린다 — 그래서 엣지↔오리진 패리티를 tools/edge_parity_check.py가
+// 매일 검사한다(그쪽이 이 파일의 짝이다).
+const CASE_URL = {
+  prec: (id) => `https://www.law.go.kr/LSW/precInfoP.do?precSeq=${id}`,
+  expc: (id) => `https://www.law.go.kr/LSW/expcInfoP.do?expcSeq=${id}`,
+};
+const CASE_UNAVAILABLE_HINT =
+  "이 판례·해석례는 law.go.kr에 본문이 제공되지 않습니다(하급심·타기관 제공 등). " +
+  "검색 결과의 사건명·사건번호를 그대로 인용하되 본문 근거가 필요하면 다른 판례를 조회하세요.";
+
 async function handleCases(url, env, request) {
   const q = (url.searchParams.get("q") || "").trim();
   const kind = url.searchParams.get("kind") || "all";
@@ -146,9 +160,13 @@ async function handleCases(url, env, request) {
     for (const block of xml.match(new RegExp(`<${k} id=[\\s\\S]*?</${k}>`, "g")) || []) {
       out.push(
         k === "prec"
-          ? { kind: "prec", case_id: cdata("판례일련번호", block), title: cdata("사건명", block),
+          ? { kind: "prec", case_id: cdata("판례일련번호", block),
+              source_url: CASE_URL.prec(cdata("판례일련번호", block)),
+              title: cdata("사건명", block),
               org: cdata("법원명", block), case_no: cdata("사건번호", block), date: cdata("선고일자", block) }
-          : { kind: "expc", case_id: cdata("법령해석례일련번호", block), title: cdata("안건명", block),
+          : { kind: "expc", case_id: cdata("법령해석례일련번호", block),
+              source_url: CASE_URL.expc(cdata("법령해석례일련번호", block)),
+              title: cdata("안건명", block),
               org: cdata("회신기관명", block) || cdata("해석기관명", block), case_no: cdata("안건번호", block),
               date: cdata("회신일자", block) || cdata("해석일자", block) },
       );
@@ -168,11 +186,24 @@ async function handleCase(url, env, request) {
     const v = cdata(tag, xml);
     return v.length > limit ? v.slice(0, limit) + "…(생략)" : v;
   };
+  const source_url = CASE_URL[kind](id);
+  // 검색엔 뜨지만 본문 API가 "일치하는 …없습니다"를 주는 판례(하급심 등)와 존재하지 않는
+  // 일련번호를 **빈 필드 성공으로 위장하지 않는다** — 오리진과 같은 구조화 오류를 낸다.
+  // 오류 응답은 캐시하지 않는다(no-store): 원천이 본문을 제공하기 시작하면 즉시 반영돼야 하고,
+  // 24시간 동안 "없음"을 박아두면 그 자체가 또 하나의 거짓말이 된다.
+  const titleTag = kind === "prec" ? "사건명" : "안건명";
+  if (xml.includes("일치하는") || !cdata(titleTag, xml)) {
+    return json({ error: "case_body_unavailable", kind, case_id: id, source_url,
+                  hint: CASE_UNAVAILABLE_HINT },
+                200, { "x-edge": "case", "Cache-Control": "no-store" });
+  }
   const body =
     kind === "prec"
-      ? { kind, case_id: id, title: f("사건명"), org: f("법원명"), case_no: f("사건번호"), date: f("선고일자"),
+      ? { kind, case_id: id, source_url,
+          title: f("사건명"), org: f("법원명"), case_no: f("사건번호"), date: f("선고일자"),
           issue: f("판시사항"), summary: f("판결요지"), referenced_laws: f("참조조문", 800) }
-      : { kind, case_id: id, title: f("안건명"), org: f("해석기관명"), case_no: f("안건번호"), date: f("해석일자"),
+      : { kind, case_id: id, source_url,
+          title: f("안건명"), org: f("해석기관명"), case_no: f("안건번호"), date: f("해석일자"),
           question: f("질의요지"), answer: f("회답"), reasoning: f("이유", 4000) };
   return json(body, 200, { "x-edge": "case" });
 }
