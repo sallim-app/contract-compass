@@ -68,9 +68,14 @@ def guide(*, contract_kind: str, ground: str | None = None) -> dict[str, Any]:
                  "ground 없이 호출하면 전체 목록이 온다."))
         grounds = picked
 
-    # 선례는 사유에 걸린 것 + 계약유형 무관한 일수 계산 선례 전부
+    # 선례는 **그 계약 계열에 해당하는 것만** 준다. 공사 전용 회신(동절기 공사중지·
+    # 장기계속공사 하자)을 용역 질의에 표시 없이 얹으면 읽는 쪽은 자기 사안에 쓸 수 있는
+    # 것으로 읽는다(2026-08-14 codex 탐침, T-2026W33-167). ground를 지정하면 그 사유에
+    # 걸린 선례로 한 번 더 좁힌다.
     linked = {p for g in grounds for p in (g.get("precedents") or [])}
-    precedents = [p for p in m["precedents"] if ground is None or p["id"] in linked]
+    precedents = [p for p in m["precedents"]
+                  if family in (p.get("applies_to") or [])
+                  and (ground is None or p["id"] in linked)]
 
     return {
         "contract_kind": contract_kind,
@@ -81,6 +86,7 @@ def guide(*, contract_kind: str, ground: str | None = None) -> dict[str, Any]:
         "grounds_count": len(grounds),
         "day_count_rules": m["day_count_rules"],
         "precedents": precedents,
+        "precedent_scope_note": m["precedent_scope_note"],
         "who_decides": m["who_decides"],
         "next_steps": [
             "해당할 만한 사유의 must_establish를 사용자와 하나씩 확인하라 — 답이 안 나오면 "

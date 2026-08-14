@@ -209,15 +209,26 @@ def check(
         rate = adjustment_rate_pct / 100.0
         gross = int(adjustment_base_amount * rate)
         f = r["formulas"]
+        arts = prof["formula_articles"]   # 근거 조문은 기관유형별로 다르다(국가 74조 / 지방 72조)
         computed = {
             "adjustment_base_amount": adjustment_base_amount,
             "rate_applied_pct": adjustment_rate_pct,
             "adjustment_amount": gross,
             "formula": f["adjustment_amount"]["expr"],
-            "legal_basis": f["adjustment_amount"]["basis"],
+            "legal_basis": arts["adjustment_amount"],
             "base_amount_note": f["adjustment_amount"]["note"],
         }
-        if advance_payment_ratio:
+        # 선금 공제는 **증액 조정에만** 적용된다 — 법문이 "산출한 증가액에서 공제한다"이다
+        # (국가 영 제64조③ / 지방 영 제73조③). 2026-08-14 codex 탐침이 잡은 결함: 감액
+        # 조정(-3%)에 공제를 적용해 감액액이 -30,000원에서 -21,000원으로 줄었다 —
+        # 계약상대자에게 유리한 쪽으로 틀려서 발주기관이 손해를 본다.
+        if advance_payment_ratio and gross <= 0:
+            computed["advance_deduction_skipped"] = {
+                "reason": "감액(또는 변동 없음) 조정이라 선금 공제를 적용하지 않았다.",
+                "legal_basis": f["advance_deduction"]["increase_only"],
+                "declared_advance_payment_ratio": advance_payment_ratio,
+            }
+        elif advance_payment_ratio:
             if not 0 < advance_payment_ratio <= 1:
                 raise PriceAdjustmentInputError(
                     "invalid_advance_ratio",
@@ -228,11 +239,11 @@ def check(
                 "advance_payment_ratio": advance_payment_ratio,
                 "amount": deduction,
                 "formula": f["advance_deduction"]["expr"],
-                "legal_basis": f["advance_deduction"]["basis"],
+                "legal_basis": arts["advance_deduction"],
                 "note": f["advance_deduction"]["note"],
             }
             computed["net_amount"] = gross - deduction
-        else:
+        elif not advance_payment_ratio:
             computed["advance_deduction_note"] = (
                 "선금급률을 주지 않아 공제를 반영하지 않았다. 선금을 받은 계약이면 "
                 "증가액에서 공제해야 한다 — " + f["advance_deduction"]["expr"])

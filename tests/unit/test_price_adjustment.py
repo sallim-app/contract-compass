@@ -120,3 +120,29 @@ def test_no_thresholds_hardcoded_in_service():
     rules = json.loads(Path(RULES_PATH).read_text(encoding="utf-8"))
     assert rules["profiles"]["national"]["single_item_threshold_pct"] == 15.0
     assert rules["profiles"]["local"]["single_item_threshold_pct"] == 10.0
+
+
+def test_advance_deduction_only_on_increase():
+    """법문은 '산출한 증가액에서 공제한다' — 감액 조정에는 공제를 적용하지 않는다.
+
+    2026-08-14 codex 탐침: -3% 조정에 공제를 적용해 감액액이 -30,000원에서 -21,000원으로
+    줄었다. 계약상대자에게 유리한 쪽으로 틀려 발주기관이 손해를 보는 오류였다.
+    """
+    d = check(**{**BASE, "adjustment_rate_pct": -3, "adjustment_base_amount": 1_000_000,
+                 "advance_payment_ratio": 0.3})
+    assert d["computed"]["adjustment_amount"] == -30_000
+    assert "advance_deduction" not in d["computed"]
+    assert "net_amount" not in d["computed"]
+    assert "증가액" in d["computed"]["advance_deduction_skipped"]["legal_basis"]
+
+
+def test_formula_basis_follows_org_profile():
+    """지방 판정에 국가 시행규칙을 근거로 달지 않는다(국가 74조 / 지방 72조)."""
+    args = dict(contract_date="2026-01-01", check_date="2026-06-01", adjustment_rate_pct=4.0,
+                adjustment_base_amount=1_000_000, advance_payment_ratio=0.3)
+    nat = check(org_type="national", **args)
+    loc = check(org_type="local", **args)
+    assert nat["computed"]["legal_basis"] == "국가계약법 시행규칙 제74조 제5항"
+    assert loc["computed"]["legal_basis"] == "지방계약법 시행규칙 제72조 제5항"
+    assert loc["computed"]["advance_deduction"]["legal_basis"] == "지방계약법 시행규칙 제72조 제6항"
+    assert not any("국가계약법" in b for b in loc["legal_basis"])

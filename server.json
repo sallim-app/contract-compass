@@ -7,7 +7,7 @@
     "url": "https://github.com/sallim-app/contract-compass",
     "source": "github"
   },
-  "version": "1.6.0",
+  "version": "1.6.1",
   "remotes": [
     {
       "type": "streamable-http",

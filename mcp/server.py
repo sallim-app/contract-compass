@@ -133,7 +133,7 @@ WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idem
 
 # server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
 # 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
-SERVER_VERSION = "1.6.0"
+SERVER_VERSION = "1.6.1"
 
 server = MCPServer(
     name="contract-compass",
@@ -381,6 +381,16 @@ def search_law(query: str, top_k: int = 8) -> dict:
             if applied >= _TOP_K_CAPS["search_law"] else
             f"총 {total_found}건 중 상위 {len(out)}건만 표시 — 더 필요하면 top_k를 올려라"
             f"(최대 {_TOP_K_CAPS['search_law']})")
+    # 2026-08-14 T-2026W33-167(codex 탐침): 키워드 0건일 때 시맨틱 폴백 결과가 그대로
+    # count>0으로 나가 **무결과가 정상 검색결과로 위장**됐다(실측: 존재하지 않는 가상
+    # 식별자 질의에 무관한 예규 2건). 히트마다 matched_by="semantic"은 있었지만 그건
+    # 히트를 들여다봐야 보이는 것이고, 모델은 count부터 읽는다 — 최상위에 실토한다.
+    if out and all(h.get("matched_by") == "semantic" for h in out):
+        result["matched_by"] = "semantic_fallback"
+        result["note_fallback"] = (
+            f"키워드 매치 0건 — 의미(임베딩) 검색으로 폴백한 결과 {len(out)}건이다. "
+            "질의어를 본문에 포함하지 않을 수 있으니 **그대로 근거로 인용하지 말고** "
+            "본문을 읽어 관련성을 직접 판단하라. 찾는 조문이 없을 가능성이 높다.")
     if not out:
         # 0건은 오류가 아니라 재질의 신호 — 에이전트가 "실패"로 오독하고 자체 지식으로
         # 빠지지 않게 다음 행동을 명시한다(2026-07-30, 복합 쿼리 0건 6/12 실측).

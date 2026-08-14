@@ -362,11 +362,15 @@ CASES = [
                 and g[0].get("quote_truncated") is True)(d.get("grounds"))),
     ("R46-일수계산규칙+선례",        # 사유 목록만으론 부족하다 — 준공검사 기간 불산입·최종
      "delay_exemption_guide", {"contract_kind": "product_manufacture"},  # 확정 계약금액 기준 같은
-     # 금액 규칙과 회신 선례가 출처와 함께 와야 실무자가 그대로 쓸 수 있다
+     # 금액 규칙과 회신 선례가 출처와 함께 와야 실무자가 그대로 쓸 수 있다.
+     # 2026-08-14 수정: 종전엔 선례 3건 이상을 요구했는데, 그건 **계열 무관하게 전부
+     # 얹던 결함**(T-2026W33-167)을 기대값으로 박아둔 것이었다 — 물품 계열에 해당하는
+     # 선례는 실제로 1건(최종 확정 계약금액 기준)뿐이다. 건수가 아니라 성질을 검사한다.
      lambda d: (len(d.get("day_count_rules") or []) >= 4
                 and any("준공검사" in r.get("rule", "") for r in d["day_count_rules"])
-                and all(p.get("source") for p in d.get("precedents") or [])
-                and len(d.get("precedents") or []) >= 3)),
+                and (d.get("precedents") or [])
+                and all(p.get("source") and p.get("applies_to") for p in d["precedents"])
+                and all("product" in p["applies_to"] for p in d["precedents"]))),
 
     # ── 이행단계 축 Phase 3: 물가변동 계약금액 조정 (T-2026W33-166, 2026-08-14) ──
     ("R47-물가변동-90일경계+산식",   # 90일 '이상'이므로 정확히 90일도 충족. 조정금액·선금
@@ -414,6 +418,45 @@ CASES = [
      lambda d: ((d.get("method") or {}).get("applied") == "item"
                 and (d.get("method") or {}).get("declared_in_contract") is None
                 and "확인" in ((d.get("method") or {}).get("assumption") or ""))),
+
+    # ── 2026-08-14 codex 탐침(신규 도구 검증 회차) 발견 4건 수리 회귀 (T-2026W33-167) ──
+    ("R53-감액조정-선금공제-미적용",  # 법문은 "산출한 **증가액**에서 공제한다"(영 제64조③).
+     "check_price_adjustment",      # 감액에 공제를 적용하면 감액폭이 줄어 발주기관이 손해다
+     {"org_type": "national", "contract_date": "2026-05-17", "check_date": "2026-08-14",
+      "adjustment_rate_pct": -3, "adjustment_base_amount": 1000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: (lambda c: (c.get("adjustment_amount") == -30000
+                           and "advance_deduction" not in c
+                           and "net_amount" not in c
+                           and bool(c.get("advance_deduction_skipped"))))(d.get("computed") or {})),
+    ("R54-증액조정-선금공제-유지",    # R53의 짝 — 증액에서는 공제가 그대로 살아 있어야 한다
+     "check_price_adjustment",      # (감액 수리가 정상 경로를 죽이지 않았는지)
+     {"org_type": "national", "contract_date": "2026-01-01", "check_date": "2026-04-01",
+      "adjustment_rate_pct": 4.2, "adjustment_base_amount": 1000000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: ((d.get("computed") or {}).get("net_amount") == 29400000
+                and ((d.get("computed") or {}).get("advance_deduction") or {}).get("amount") == 12600000)),
+    ("R55-지방판정-지방근거인용",     # 지방 판정에 국가 시행규칙 제74조를 근거로 달던 결함 —
+     "check_price_adjustment",     # 이 저장소 재발 계열(R8·R12·R15·R16)의 Phase 3판
+     {"org_type": "local", "contract_date": "2026-05-16", "check_date": "2026-08-14",
+      "adjustment_rate_pct": 3, "adjustment_base_amount": 1000000,
+      "advance_payment_ratio": 0.3},
+     lambda d: (lambda c, lb: ("지방계약법 시행규칙 제72조" in (c.get("legal_basis") or "")
+                               and "국가계약법" not in json.dumps(c, ensure_ascii=False)
+                               and not any("국가계약법" in x for x in lb)))(
+                    d.get("computed") or {}, d.get("legal_basis") or [])),
+    ("R56-시맨틱폴백-실토",          # 키워드 0건인데 의미검색 결과가 count>0으로 나가면
+     "search_law",                 # 무결과가 정상 검색결과로 위장된다
+     {"query": "존재하지않는가상법령조문_987654321", "top_k": 100},
+     lambda d: (d.get("count", 0) == 0 or
+                (d.get("matched_by") == "semantic_fallback"
+                 and "키워드 매치 0건" in (d.get("note_fallback") or "")))),
+    ("R57-선례-계열밖-미노출",       # 용역 질의에 공사 전용 회신(동절기 공사중지·장기계속
+     "delay_exemption_guide", {"contract_kind": "service"},  # 하자)을 표시 없이 얹지 않는다
+     lambda d: (lambda ids: "winter_suspension" not in ids
+                and "prior_phase_defect" not in ids
+                and "final_amount_basis" in ids)(
+                    [p["id"] for p in d.get("precedents", [])])),
 ]
 
 

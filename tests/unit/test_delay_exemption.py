@@ -83,3 +83,17 @@ def test_ground_ids_match_tool_literal():
     src = (Path(__file__).resolve().parents[2] / "mcp" / "server.py").read_text(encoding="utf-8")
     for gid in ground_ids():
         assert f'"{gid}"' in src, f"{gid}가 도구 Literal에 없다"
+
+
+def test_precedents_are_scoped_to_family():
+    """공사 전용 회신을 용역 질의에 얹지 않는다(2026-08-14 codex 탐침).
+
+    전 계열 공통인 '최종 확정 계약금액 기준'만 남고, 동절기 공사중지·장기계속공사 하자
+    회신은 공사에서만 나와야 한다.
+    """
+    svc = {p["id"] for p in guide(contract_kind="service")["precedents"]}
+    cst = {p["id"] for p in guide(contract_kind="construction")["precedents"]}
+    assert svc == {"final_amount_basis"}
+    assert {"winter_suspension", "prior_phase_defect"} <= cst
+    for pr in MAP["precedents"]:
+        assert pr.get("applies_to"), f"{pr['id']}: 적용 계열 태그 없음"
