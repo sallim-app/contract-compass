@@ -31,12 +31,35 @@ def test_control_chars_are_stripped():
     assert out[0]["extraction_quality"] == "control_chars_cleaned"
 
 
-def test_two_column_source_carries_warning_in_every_collection():
-    """같은 PDF가 컬렉션마다 접두어를 달고 들어온다 — 접두어 때문에 경고가 빠지면 안 된다."""
-    for did in ("general_감사원공공계", "faq_general_감사원공공계"):
-        out = _quality_gate([_chunk(did)])
-        assert out[0]["extraction_quality"] == "two_column_pdf", did
-        assert "2단" in out[0]["quality_warning"], did
+def test_degraded_sources_are_disclosed_with_prefix_match():
+    """손상 목록에 있는 문서는 컬렉션 접두어가 붙어도 경고가 실려야 한다.
+
+    목록이 비어 있는 상태(전부 재추출 완료)도 정상이다 — 그때는 검사할 대상이 없다.
+    """
+    for did in _DEGRADED_SOURCES:
+        for variant in (did, f"faq_{did}"):
+            out = _quality_gate([_chunk(variant)])
+            assert out[0]["extraction_quality"] == "two_column_pdf", variant
+            assert out[0]["quality_warning"], variant
+
+
+def test_reextracted_guide_has_no_control_chars_in_corpus():
+    """재추출(T-2026W33-173)의 완료 판정 — 실제 코퍼스를 본다.
+
+    감사원 「공공계약 실무가이드」는 열 인식 정렬로 재색인했으므로 제어문자가 0이어야 한다.
+    다시 오염되면(추출기 회귀·재색인 실수) 여기서 잡힌다.
+    """
+    import chromadb
+
+    from backend.config import get_settings
+    from backend.services.rag_service import _CTRL_RE
+    cl = chromadb.PersistentClient(get_settings().chroma_path)
+    for name in ("public_guides", "faq"):
+        docs = cl.get_collection(name).get(
+            where={"document_id": "general_감사원공공계"}, include=["documents"])["documents"]
+        assert docs, f"{name}: 감사원 가이드 청크가 없다(재색인 실패?)"
+        dirty = [d for d in docs if _CTRL_RE.search(d or "")]
+        assert not dirty, f"{name}: 제어문자 청크 {len(dirty)}건 — 추출 회귀"
 
 
 def test_clean_sources_are_untouched():

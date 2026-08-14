@@ -139,11 +139,11 @@ def _classify_source(document_id: str) -> str:
 _EXCLUDED_SOURCES = {
     "service_sw_guide_2025": "PDF 폰트 인코딩 손상으로 본문 판독 불가(전 청크) — 재추출 전까지 제외",
 }
-_DEGRADED_SOURCES = {
-    "general_감사원공공계": "2단 편집 PDF 추출본 — 다른 단의 문장이 문단 중간에 섞일 수 있다. "
-                       "문장이 끊기거나 앞뒤가 안 맞으면 그 부분은 인용하지 말고 원문(감사원 "
-                       "「공공계약 실무가이드」)을 확인하라.",
-}
+# 2026-08-14 재추출 완료(T-2026W33-173): general_감사원공공계는 열 인식 정렬로 다시 색인해
+# 행교차·제어문자가 사라졌다(public_guides 818청크·faq 190청크 모두 제어문자 0건, 실측) —
+# 그래서 이 표에서 뺐다. **경고를 지운 게 아니라 경고할 대상이 없어진 것**이다.
+# 새 손상 문서가 생기면 여기 한 줄을 넣으면 그 즉시 다시 공시된다.
+_DEGRADED_SOURCES: dict[str, str] = {}
 _CTRL_RE = re.compile("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u200b-\u200f\u202a-\u202e\ufeff]")
 
 

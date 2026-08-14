@@ -91,7 +91,12 @@ CASES = [
      lambda d: any("수의" in (c.get("method") or "") for c in d.get("candidates", []))),
     ("R6-지명입찰-동의어",       # 지방계약법령 '지명입찰' 용어차 동의어 확장 회귀
      "search_references", {"query": "지자체 용역 지명경쟁 금액", "top_k": 8},
-     lambda d: any("지명입찰" in h.get("excerpt", "") or "제22조" in h.get("excerpt", "")
+     # 2026-08-14: 앵커 검사 범위를 excerpt→excerpt+section으로 넓혔다. 감사원 가이드
+     # 재추출(T-2026W33-173)로 청크 경계가 바뀌자 같은 근거(지방계약법 시행령 제22조)가
+     # **section에 실려** 회수되는데도 거짓 실패했다 — 회수 능력이 아니라 청크 경계라는
+     # 우연한 사실에 검사가 매여 있었던 것이다(R46과 같은 교훈).
+     lambda d: any("지명입찰" in (h.get("excerpt", "") + h.get("section", ""))
+                   or "제22조" in (h.get("excerpt", "") + h.get("section", ""))
                    for h in d.get("hits", []))),
     ("R7-절단-가시화",           # search_law 조용한 절단 금지(total_found·note)
      "search_law", {"query": "수의계약", "top_k": 3},
@@ -452,18 +457,20 @@ CASES = [
      lambda d: (d.get("count", 0) == 0 or
                 (d.get("matched_by") == "semantic_fallback"
                  and "키워드 매치 0건" in (d.get("note_fallback") or "")))),
-    ("R60-추출품질-세정+경고",       # 깨진 PDF 추출본을 검증·경고 없이 '근거'로 내놓던 결함
-     "search_references",          # (T-2026W32-161): 제어문자(BEL)로 시작하는 2단 편집
-     {"query": "낙찰하한율 50억 미만", "top_k": 8},  # 교차 텍스트가 relevance 0.99로 상위에 왔다
+    ("R60-추출품질-세정+공시",       # 깨진 PDF 추출본을 검증·경고 없이 '근거'로 내놓던 결함
+     "search_references",          # (T-2026W32-161): 제어문자(BEL)로 시작하는 2단 편집 교차
+     {"query": "낙찰하한율 50억 미만", "top_k": 8},  # 텍스트가 relevance 0.99로 상위에 왔다.
+     # 2026-08-14 재추출(T-2026W33-173) 후 갱신: 종전 이 케이스는 "감사원 히트에 경고가
+     # **있어야** 한다"고 요구했는데, 그건 지혈 상태를 기대값으로 박은 것이었다(R46과 같은
+     # 함정). 지금 지켜야 하는 불변식은 ①제어문자가 응답에 남지 않는다 ②판독 불가 문서는
+     # 오지 않는다 ③경고가 붙었다면 문구가 실려 있다 — 재추출로 경고가 사라져도 통과한다.
      lambda d: (lambda hits: bool(hits)
-                # ①제어문자는 응답에 남지 않는다 ②손상 문서는 손상됐다고 말한다
                 and not any(re.search("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u200b-\u200f\ufeff]",
                                       (h.get("excerpt") or "") + (h.get("section") or ""))
                             for h in hits)
-                and all(h.get("extraction_quality") == "two_column_pdf" and h.get("quality_warning")
-                        for h in hits if "감사원공공계" in (h.get("source") or ""))
-                # ③판독 불가 문서(폰트 인코딩 손상)는 결과에 아예 오지 않는다
-                and not any("sw_guide" in (h.get("source") or "") for h in hits))(
+                and not any("sw_guide" in (h.get("source") or "") for h in hits)
+                and all(h.get("quality_warning") for h in hits
+                        if h.get("extraction_quality") == "two_column_pdf"))(
                     d.get("hits", []))),
     ("R58-문화재공사-전용룰-1순위",   # 공용(센티널) 룰이 전용 룰의 1순위를 뺏던 결함
      "decide_contract_method",       # (T-2026W33-148): 국가 문화재수리 1.8억의 1순위가
