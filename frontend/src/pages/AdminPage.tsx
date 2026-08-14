@@ -73,7 +73,7 @@ export default function AdminPage({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto overscroll-contain">
       <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mt-8 mb-8">
         <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-bold text-gray-800">관리자 대시보드</h2>

@@ -7,7 +7,11 @@ export default function HomeDashboard({ onDecision, onAsk, onGlossary }: {
   onDecision: () => void; onAsk: () => void; onGlossary: () => void
 }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflow: 'auto' }}>
+    // 홈은 문서(body) 스크롤로 흐른다 — position:fixed 오버레이 스크롤러로 띄우면
+    // 그 아래 위저드 문서가 따로 스크롤되는 '이중 스크롤 면'이 생기고, 모바일 인앱
+    // 브라우저(스레드)는 툴바 접힘·닫기 제스처를 문서 스크롤러에 묶으므로 위로 드래그한
+    // 뒤 아래로 스크롤이 먹지 않는다(T-2026W33-178 실측). 뒤 위저드는 .home-open이 접는다.
+    <div className="home-page">
       <div className="app">
         {/* 상단바 */}
         <div className="topbar">

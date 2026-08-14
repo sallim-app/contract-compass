@@ -410,7 +410,7 @@ function HistoryPanel({ onSelect, onClose }: { onSelect: (entry: HistoryEntry) =
   const favorites = loadFavorites()
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto overscroll-contain" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mt-8 mb-8" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-bold text-gray-800">최근 분석 / 즐겨찾기</h2>
@@ -489,6 +489,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'auto' })
   }, [currentStep])
 
+  // 홈↔위저드 전환도 같은 문서를 스크롤하므로(T-2026W33-178 이후) 전환 시 맨 위로.
+  // 안 하면 위저드 중간에서 홈으로 오면 홈이 중간부터 보인다.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [showHome])
+
   // 전환 ④: 결정 요약(step4) 도달 = 위저드 완주. 단계 전환 경로가 여럿(Step3 버튼·
   // 스테퍼 점프)이라 각 호출지가 아니라 여기서 한 번만 잡는다. 뒤로 갔다 다시 오면
   // 재발화하지만 umami 이벤트는 세션 단위로 집계되므로 판정에 해롭지 않다.
@@ -519,7 +525,7 @@ export default function App() {
 
   return (
     <SourceDrawerProvider>
-    <div className={`dt-app step-${currentStep}`}>
+    <div className={`dt-app step-${currentStep}${showHome ? ' home-open' : ''}`}>
       <header className="dt-top">
         <button
           onClick={() => { window.location.hash = '#home' }}
@@ -595,6 +601,9 @@ export default function App() {
         onGlossary={() => { setShowGlossary(true) }} />}
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
 
+      {/* 홈에서는 숨긴다 — 예전 홈은 고정 오버레이라 이 FAB을 덮고 있었다. 문서 스크롤로
+          바꾸면서(T-2026W33-178) 드러나 표준 피드백 위젯(index.html)과 겹쳐 보였다. */}
+      {!showHome && (
       <button
         onClick={() => setShowFeedback(true)}
         title="의견 보내기"
@@ -602,6 +611,7 @@ export default function App() {
       >
         💡 의견
       </button>
+      )}
     </div>
     </SourceDrawerProvider>
   )

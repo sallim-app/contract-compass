@@ -6,7 +6,18 @@
 
 /* NOTE: global html/body overrides removed — production app sets these via tailwind+index.css. */
 
-.dt-app { min-height: 100vh; display: flex; flex-direction: column; }
+/* 100dvh = 인앱 브라우저 툴바를 뺀 실제 보이는 높이. 100vh만 쓰면 툴바 높이만큼
+   화면 밖으로 밀려 하단이 잘린다(구형 브라우저용으로 vh를 먼저 선언). */
+.dt-app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+
+/* ── 홈(공개 진입 화면) = 문서 스크롤 ──────────────────────────────
+   홈이 열려 있는 동안 뒤의 위저드를 접는다. 접지 않으면 홈 아래에 위저드가
+   그대로 흘러 문서가 두 배로 길어지고(실측 1085px), 예전처럼 홈을 고정
+   오버레이로 덮으면 스크롤 면이 둘로 갈려 모바일 인앱 브라우저에서 드래그가
+   먹통이 된다(T-2026W33-178). 스크롤 면은 항상 하나여야 한다. */
+.dt-app.home-open > .dt-top,
+.dt-app.home-open > .dt-cols { display: none; }
+.home-page { flex: 1; min-width: 0; background: var(--paper, var(--bg-primary)); }
 
 /* ── top app bar ── */
 .dt-top {

@@ -23,7 +23,9 @@
 .ask-head-btn:active { transform: scale(0.92); }
 
 /* ── messages ── */
-.ask-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 18px; display: flex; flex-direction: column; gap: 18px; }
+/* overscroll-behavior-y:contain = 끝까지 스크롤해도 뒤 문서로 스크롤이 이어지지 않는다.
+   touch-action:pan-y = 세로 드래그만 이 스크롤러의 것으로 확정(인앱 브라우저 제스처 충돌 방지). T-2026W33-178 */
+.ask-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-y; padding: 20px 18px; display: flex; flex-direction: column; gap: 18px; }
 .ask-row { display: flex; gap: 10px; max-width: 100%; }
 .ask-row.user { justify-content: flex-end; }
 .ask-row.assistant { justify-content: flex-start; }
@@ -129,7 +131,7 @@
 .ask-modal-head p { font-size: var(--text-xs); color: var(--text-quaternary); margin: 3px 0 0; }
 .ask-modal-x { width: 34px; height: 34px; border-radius: var(--radius-full); border: 1px solid var(--border-light); background: var(--bg-secondary); color: var(--text-tertiary); display: grid; place-items: center; cursor: pointer; }
 .ask-modal-x:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-.ask-modal-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+.ask-modal-body { flex: 1; overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-y; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
 .bm-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 12px 14px; transition: border-color var(--duration-fast); }
 .bm-row:hover { border-color: var(--accent-highlight); }
 .bm-q { grid-column: 1; text-align: left; font-family: inherit; font-size: var(--text-sm); font-weight: 700; color: var(--accent-secondary); background: none; border: none; cursor: pointer; padding: 0; }
