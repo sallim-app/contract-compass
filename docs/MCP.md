@@ -36,11 +36,18 @@
 ### search_law — 법령 조문 검색
 - 입력: `query`(예: "수의계약", "시행령 제26조", 자연어 복합 쿼리 가능), `top_k`(≤20)
 - 다단어는 부분매치 순위(2토큰 이상), 0건이면 시맨틱 폴백. 0건 시 재질의 `hint` 동봉
-- 반환: `{hits: [{law_name, article, content, snippet, law_ref}], count}`
+- 반환: `{hits: [{law_name, article, content, snippet, law_ref}], count, total_found}`
+- **상한 조정은 공시한다**: 요청 `top_k`가 상한을 넘으면 `top_k_applied`
+  (`{requested, applied, cap}`)가 실린다. 상한에 닿아 잘린 경우 `note`는 "top_k를 올려라"
+  대신 **실행 가능한 다음 행동**(질의 좁히기·get_law_article 직접 조회)을 준다
+  (2026-08-14 · 회귀 R39). `search_references`·`search_cases`도 같은 규약
 
 ### get_law_article — 조문 원문 전체 (현행)
 - 입력: `ref`(예: "국가계약법 시행령 제26조", "지방계약법 시행규칙 제24조")
 - 긴 조문은 항 단위 자식 청크를 조립해 전문 복원. 코퍼스에 없으면 구조화 404
+- `assumption`: 법령명을 생략한 참조("시행령 제26조")를 국가계약법으로 **해석했을 때만**
+  실린다 — 추정 근거·같은 조문번호를 가진 다른 시행령·재호출 지침 포함. 지방계약 질문이면
+  이 필드가 틀린 법을 보고 있다는 신호다(2026-08-14 · 회귀 R40·R41)
 - `notes[]`: **법률 자체의 미정비 상호인용** 경고(원문은 무수정). 예 — 지방보조금법
   제21조⑤가 "제2항 각 호"를 인용하나 제2항에 각 호가 없음(2023.4.11 개정으로 항이
   밀렸는데 인용 미정비, law.go.kr 현행도 동일). 탐지는 결정론·LLM 미사용
@@ -62,7 +69,7 @@
 
 ### search_cases — 판례·법령해석례 검색 (law.go.kr 실시간)
 - 입력: `query`(핵심 명사 위주), `top_k`(종류당 ≤10), `kind`("prec"판례|"expc"해석례|"all")
-- 반환: `{hits: [{kind, case_id, title, org, case_no, date}]}` — 본문은 get_case로
+- 반환: `{hits: [{kind, case_id, source_url, title, org, case_no, date}]}` — 본문은 get_case로
 
 ### estimate_delay_penalty — 지체상금·지연배상금 산정 (이행단계)
 계약 체결 **이후** 축의 첫 판정 도구. 법정 요율·기준금액·30% 한도를 결정론으로 적용한다.
@@ -89,6 +96,8 @@
 ### get_case — 판례/해석례 본문
 - 입력: `kind`, `case_id`(search_cases 결과)
 - 반환(판례): 판시사항·판결요지·참조조문 / (해석례): 질의요지·회답·이유
+- `source_url`: 국가법령정보센터 원문 주소 — 인용 시 함께 제시하라(본문 미제공
+  오류 응답에도 실린다). 2026-08-14 · 회귀 R42
 - 판례가 인용한 참조조문은 get_law_article로 교차확인 권장
 
 ## 권장 사용 흐름

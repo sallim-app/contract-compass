@@ -312,6 +312,33 @@ CASES = [
       "contract_amount": 100000000, "delay_days": 10},
      lambda d: ((d.get("rate") or {}).get("inferred") is True
                 and any("해석" in w for w in d.get("warnings", [])))),
+
+    # ── 2026-08-13 codex 탐침 발견 4건 수리 회귀 (T-2026W33-160~163) ──
+    ("R39-top_k-상한-실행가능안내",   # 상한(20)에 닿았는데 "top_k를 올려라"라고 하면
+     "search_law", {"query": "제21조", "top_k": 30},  # 실행 불가능한 행동 지시다. 게다가
+     # 상한 초과 요청을 말없이 깎으면 모델은 30건을 받았다고 믿는다(§12.4 조용한 clamp).
+     lambda d: ((d.get("top_k_applied") or {}).get("requested") == 30
+                and (d.get("top_k_applied") or {}).get("applied") == 20
+                and "올려라" not in (d.get("note") or "")
+                and "상한" in (d.get("note") or ""))),
+    ("R40-법령명생략-추정공시",       # "시행령 제26조"를 국가계약법으로 해석하는 것 자체는
+     "get_law_article", {"ref": "시행령 제26조"},   # 유용하나, 말없이 하면 지방계약 담당자가
+     # 다른 법 조문을 받고도 모른다 — 추정 사실·대안·행동지침을 함께 낸다.
+     lambda d: (isinstance(d.get("assumption"), dict)
+                and d["assumption"].get("resolved_to") == "국가계약법 시행령"
+                and "지방계약법 시행령" in (d["assumption"].get("other_laws_with_same_article") or [])
+                and bool(d["assumption"].get("hint")))),
+    ("R41-정확한참조-추정없음",       # R40의 짝 — 법령명을 정확히 준 호출에 추정 딱지가
+     "get_law_article", {"ref": "국가계약법 시행령 제26조"},  # 붙으면 그것도 거짓말이다.
+     # 개정일자 파손(2011.11.23→2011.23) 회귀도 여기서 같이 잡는다(T-2026W33-162):
+     # 존재할 수 없는 날짜(월>12 또는 일 없는 2요소 날짜)가 개정 표기에 있으면 FAIL.
+     lambda d: (d.get("assumption") is None
+                and not __import__("re").search(
+                    r"<개정[^>]*?\b\d{4}\.\d{1,2}(?![.\d])", d.get("content") or ""))),
+    ("R42-판례-원문링크",            # law.go.kr 실시간 조회인데 출처 링크가 없어 감사·보고서
+     "get_case", {"kind": "prec", "case_id": "204256"},  # 인용에서 근거를 되짚을 수 없었다
+     lambda d: (d.get("source_url", "").startswith("https://www.law.go.kr/")
+                and "204256" in d.get("source_url", ""))),
 ]
 
 

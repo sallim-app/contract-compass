@@ -133,7 +133,7 @@ WRITE_FEEDBACK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idem
 
 # server.json·공식 레지스트리와 단일 진실 — 3중 불일치(1.1.0/1.1.1/1.1.2) 정합(2026-08-09).
 # 재게시 절차: server.json version 동기 → mcp-publisher login dns(sallim.app) → publish.
-SERVER_VERSION = "1.3.0"
+SERVER_VERSION = "1.4.0"
 
 server = MCPServer(
     name="contract-compass",
@@ -217,6 +217,21 @@ def _post(path: str, body: dict[str, Any], headers: dict[str, str] | None = None
 
 def _is_error(d: Any) -> bool:
     return isinstance(d, dict) and "error" in d
+
+
+# 검색 도구별 top_k 상한. 상한 자체는 정당한 운영 상수지만 **말없이 깎으면 안 된다** —
+# 모델은 자기가 요청한 범위를 받았다고 믿는다(mcp-tool-design §12.4, T-2026W33-160).
+_TOP_K_CAPS = {"search_law": 20, "search_references": 12, "search_cases": 10}
+
+
+def _applied_top_k(requested: int, cap: int) -> tuple[int, dict | None]:
+    """(적용값, 조정 공시). 요청과 다른 값을 쓸 때만 공시 dict를 돌려준다."""
+    applied = max(1, min(requested, cap))
+    if applied == requested:
+        return applied, None
+    return applied, {
+        "requested": requested, "applied": applied, "cap": cap,
+        "reason": f"top_k 허용 범위는 1~{cap} — 요청값을 조정했다(응답 건수는 applied 기준)."}
 
 
 @server.tool(annotations=READ_ONLY)
@@ -345,16 +360,27 @@ def search_law(query: str, top_k: int = 8) -> dict:
     if _is_error(hits):
         return hits
     total_found = len(hits)
+    applied, clamp = _applied_top_k(top_k, _TOP_K_CAPS["search_law"])
     out = []
-    for h in hits[: max(1, min(top_k, 20))]:
+    for h in hits[:applied]:
         h = dict(h)
         for k in ("content", "snippet"):
             if isinstance(h.get(k), str) and len(h[k]) > 400:
                 h[k] = h[k][:400] + "…"
         out.append(h)
     result: dict[str, Any] = {"hits": out, "count": len(out), "total_found": total_found}
+    if clamp:
+        result["top_k_applied"] = clamp
     if total_found > len(out):
-        result["note"] = f"총 {total_found}건 중 상위 {len(out)}건만 표시 — 더 필요하면 top_k를 올려라"
+        # 2026-08-14 T-2026W33-160: 종전 안내는 상한에 이미 닿은 호출에도 "top_k를 올려라"라고
+        # 해서 **실행 불가능한 행동**을 지시했다(codex 탐침). 상한이면 다른 길을 준다.
+        result["note"] = (
+            f"총 {total_found}건 중 상위 {len(out)}건만 표시 — top_k 상한이 "
+            f"{_TOP_K_CAPS['search_law']}이라 더 올릴 수 없다. 질의를 좁히거나"
+            "('법령명 제N조' 형태) get_law_article로 특정 조문을 직접 조회하라."
+            if applied >= _TOP_K_CAPS["search_law"] else
+            f"총 {total_found}건 중 상위 {len(out)}건만 표시 — 더 필요하면 top_k를 올려라"
+            f"(최대 {_TOP_K_CAPS['search_law']})")
     if not out:
         # 0건은 오류가 아니라 재질의 신호 — 에이전트가 "실패"로 오독하고 자체 지식으로
         # 빠지지 않게 다음 행동을 명시한다(2026-07-30, 복합 쿼리 0건 6/12 실측).
@@ -375,10 +401,13 @@ def search_references(query: str, top_k: int = 6) -> dict:
         query: 자연어 검색어 (예: "적격심사 낙찰하한율 50억 미만")
         top_k: 반환 건수 (기본 6, 최대 12)
     """
-    hits = _get("/law/references", {"q": query, "top_k": max(1, min(top_k, 12))})
+    applied, clamp = _applied_top_k(top_k, _TOP_K_CAPS["search_references"])
+    hits = _get("/law/references", {"q": query, "top_k": applied})
     if _is_error(hits):
         return hits
     result: dict[str, Any] = {"hits": hits, "count": len(hits)}
+    if clamp:
+        result["top_k_applied"] = clamp
     # 2026-07-30 R9: 순위 근거를 에이전트에게 밝힌다. rerank가 못 돌면(키 미설정·한도 초과)
     # 순서는 하이브리드 검색(RRF) 그대로이고 relevance 값은 관련도가 아니라 표시용이다 —
     # 이걸 숨기면 에이전트가 1위 청크를 정답으로 단정한다.
@@ -406,7 +435,8 @@ def search_cases(query: str, top_k: int = 5, kind: Literal["prec", "expc", "all"
         top_k: 종류당 반환 건수 (기본 5, 최대 10)
         kind: "prec"(법원 판례) | "expc"(법제처 법령해석례) | "all"(둘 다, 기본)
     """
-    hits = _get("/law/cases", {"q": query, "top_k": max(1, min(top_k, 10)), "kind": kind})
+    applied, clamp = _applied_top_k(top_k, _TOP_K_CAPS["search_cases"])
+    hits = _get("/law/cases", {"q": query, "top_k": applied, "kind": kind})
     if _is_error(hits):
         return hits
     result: dict[str, Any] = {"hits": hits, "count": len(hits)}
@@ -418,6 +448,9 @@ def search_cases(query: str, top_k: int = 5, kind: Literal["prec", "expc", "all"
 @server.tool(annotations=READ_ONLY)
 def get_case(kind: Literal["prec", "expc"], case_id: str) -> dict:
     """판례/해석례 본문 조회 — 판시사항·판결요지·참조조문(판례) 또는 질의요지·회답·이유(해석례).
+
+    응답의 `source_url`은 국가법령정보센터 원문 주소다 — 판례·해석례를 인용할 때는
+    **이 링크를 함께 제시하라**(감사·보고서에서 근거를 되짚을 수 있어야 한다).
 
     Args:
         kind: "prec" | "expc" (search_cases 결과의 kind)
@@ -434,6 +467,10 @@ def get_law_article(ref: str) -> dict:
     것이다(예: 제5항이 '제2항 각 호'를 인용하나 제2항에 각 호가 없음). 원문은
     law.go.kr 현행 그대로이며 우리가 고치지 않는다 — 그 조문을 근거로 답할 때는
     notes의 내용을 사용자에게 함께 알리고 단정을 피하라.
+
+    응답에 `assumption`이 있으면 **법령명을 우리가 추정해 채운 것**이다(예: "시행령
+    제26조" → 국가계약법 시행령). 지방계약 질문이었다면 틀린 법을 보고 있는 것이니
+    assumption.hint대로 법령명을 붙여 다시 부르고, 어느 법령 기준인지 사용자에게 밝혀라.
 
     Args:
         ref: 정확한 조문 참조 (예: "국가계약법 시행령 제26조")

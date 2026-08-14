@@ -42,6 +42,11 @@ class LawArticleResponse(BaseModel):
     law_ref: str
     # 법률 자체의 미정비 상호인용 경고(원문은 그대로) — 없으면 빈 리스트
     notes: list[dict] = []
+    # 2026-08-14 T-2026W33-161: 법령명을 생략한 참조("시행령 제26조")를 국가계약법으로
+    # 해석했을 때 **그 해석을 밝힌다**. 종전엔 조용히 폴백해서, 지방계약 담당자가
+    # 지방계약법 시행령 제26조를 물어도 국가 조문을 받고 그 사실을 알 길이 없었다.
+    # 해석이 없었으면(정확한 법령명을 준 호출) 이 필드는 없다.
+    assumption: dict | None = None
 
 
 class LawSearchHit(BaseModel):
@@ -58,8 +63,16 @@ class LawSearchHit(BaseModel):
 
 # 원문 청크의 항·호·목 표지 중복 아티팩트("① ①", "3. 3.", "가. 가.") 정규화.
 # 색인 시점 파싱 잔재 — 재색인 없이도 API 반환 시점에 정리한다.
+#
+# 2026-08-14 T-2026W33-162: 숫자 표지 규칙이 **개정일자를 먹고 있었다**(codex 탐침).
+# "2011.11.23"에는 "11."이 두 번 이어 나오므로 중복 표지로 오인돼 "2011.23"이 됐고,
+# "1999.9.9"는 "1999.9"가 됐다 — 원문 XML은 멀쩡한데(실측) 반환 시점에 망가진 것이라
+# 조문 본문은 정상인데 개정 이력만 존재할 수 없는 날짜가 됐다(감사 자료 인용 불가).
+# 표지는 줄머리나 공백 뒤에 오고 날짜는 숫자·점 뒤에 붙는다 — 그 경계로 가른다.
 _DUP_MARKER_RE = re.compile(
-    r"([①-⑳])\s*\1|(\d{1,2}\.)\s*\2|([가-힣]\.)\s*\3"
+    r"([①-⑳])\s*\1"
+    r"|(?<![\d.])(\d{1,2}\.)\s*\2(?!\d)"
+    r"|([가-힣]\.)\s*\3"
 )
 
 
@@ -230,6 +243,8 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
 
     law_part = ref[: article_match.start()].strip().rstrip("ㆍ·,")
     target_law = _LAW_ALIASES.get(law_part, law_part) if law_part else ""
+    # 별칭으로 법령을 **우리가 골랐는지** 기억해 둔다(아래 assumption 공시용).
+    alias_resolved = bool(law_part) and target_law != law_part
 
     col = _get_collection()
     results = col.get(
@@ -295,12 +310,29 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
         except Exception:
             pass  # 조립 실패 시 parent 축약본이라도 반환
     cleaned = _clean_markers(doc)
+    assumption = None
+    if alias_resolved:
+        # 같은 조문번호를 가진 다른 법령 중 **같은 종류**만 — 사용자가 '시행령'이라 했으면
+        # 시행령끼리가 후보다. 전부 나열하면(제26조를 가진 법령 20여 건) 정작 봐야 할
+        # 지방계약법 시행령이 소음에 묻힌다.
+        chosen = meta.get("law_name", "")
+        others = sorted(n for n in {(m.get("law_name") or "") for m in metas} - {chosen, ""}
+                        if n.endswith(law_part))
+        assumption = {
+            "input": law_part,
+            "resolved_to": chosen,
+            "reason": f"법령명이 생략돼 '{law_part}'을(를) 국가계약법 기준으로 해석했다.",
+            "other_laws_with_same_article": others,
+            "hint": (f"지방계약·다른 법령을 물었다면 법령명을 붙여 다시 호출하라"
+                     f"(예: '지방계약법 {article}'). 사용자에게 어느 법령 기준인지 밝혀라."),
+        }
     return LawArticleResponse(
         law_name=meta.get("law_name", ""),
         article=article,
         content=cleaned,
         law_ref=meta.get("law_ref", ""),
         notes=detect_crossref_anomalies(cleaned),
+        assumption=assumption,
     )
 
 
@@ -688,6 +720,21 @@ def _drf_get(path: str, params: dict) -> str:
         raise HTTPException(502, f"law.go.kr 조회 실패: {type(exc).__name__}")
 
 
+# 판례·해석례 원문 링크 (T-2026W33-163, 2026-08-14 실측 200 확인).
+# 기치②: 근거를 인용하려면 수요자가 원문을 되짚을 수 있어야 한다. law.go.kr 실시간
+# 조회인데 응답에 출처 링크가 없어 감사·보고서 인용에서 출처를 달 수 없었다.
+# DRF API URL(lawService.do)은 우리 OC 키가 노출되므로 쓰지 않는다 — 공개 뷰어 주소만.
+_CASE_URL = {
+    "prec": "https://www.law.go.kr/LSW/precInfoP.do?precSeq={id}",
+    "expc": "https://www.law.go.kr/LSW/expcInfoP.do?expcSeq={id}",
+}
+
+
+def _case_url(kind: str, case_id: str) -> str | None:
+    tmpl = _CASE_URL.get(kind)
+    return tmpl.format(id=case_id) if (tmpl and case_id) else None
+
+
 def _cdata(tag: str, block: str) -> str:
     m = re.search(rf"<{tag}>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</{tag}>", block, re.S)
     return (m.group(1).strip() if m else "").replace("<br/>", " ")
@@ -716,18 +763,22 @@ def search_cases(
                                         "display": top_k, "query": q})
         for block in re.findall(rf"<{k} id=.*?</{k}>", xml, re.S):
             if k == "prec":
+                _cid = _cdata("판례일련번호", block)
                 out.append({
                     "kind": "prec",
-                    "case_id": _cdata("판례일련번호", block),
+                    "case_id": _cid,
+                    "source_url": _case_url("prec", _cid),
                     "title": _cdata("사건명", block),
                     "org": _cdata("법원명", block),
                     "case_no": _cdata("사건번호", block),
                     "date": _cdata("선고일자", block),
                 })
             else:
+                _cid = _cdata("법령해석례일련번호", block)
                 out.append({
                     "kind": "expc",
-                    "case_id": _cdata("법령해석례일련번호", block),
+                    "case_id": _cid,
+                    "source_url": _case_url("expc", _cid),
                     "title": _cdata("안건명", block),
                     # 검색 응답은 회신기관/회신일자, 본문 응답은 해석기관/해석일자 — 명칭이 다르다
                     "org": _cdata("회신기관명", block) or _cdata("해석기관명", block),
@@ -757,15 +808,18 @@ def get_case(
     # 전 필드 빈 문자열로 조용히 넘기던 결함 — 구조화 오류+행동 지침으로 대체.
     if "일치하는" in xml or not (_cdata("사건명", xml) or _cdata("안건명", xml)):
         return {"error": "case_body_unavailable", "kind": kind, "case_id": case_id,
+                "source_url": _case_url(kind, case_id),
                 "hint": "이 판례·해석례는 law.go.kr에 본문이 제공되지 않습니다"
                         "(하급심·타기관 제공 등). 검색 결과의 사건명·사건번호를 그대로"
                         " 인용하되 본문 근거가 필요하면 다른 판례를 조회하세요."}
     if kind == "prec":
         return {"kind": "prec", "case_id": case_id,
+                "source_url": _case_url("prec", case_id),
                 "title": _f("사건명"), "org": _f("법원명"), "case_no": _f("사건번호"),
                 "date": _f("선고일자"), "issue": _f("판시사항"),
                 "summary": _f("판결요지"), "referenced_laws": _f("참조조문", 800)}
     return {"kind": "expc", "case_id": case_id,
+            "source_url": _case_url("expc", case_id),
             "title": _f("안건명"), "org": _f("해석기관명"), "case_no": _f("안건번호"),
             "date": _f("해석일자"), "question": _f("질의요지"),
             "answer": _f("회답"), "reasoning": _f("이유", 4000)}
