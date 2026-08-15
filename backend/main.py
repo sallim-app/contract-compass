@@ -277,6 +277,45 @@ API 호출 기록(도구명·시각·키 식별자)을 보안, 오류 진단, �
 <h3>6. 약관의 변경</h3>
 <p>변경 시 이 페이지에 게시합니다.</p>
 <p><small>운영자: 살림(Sallim) · 문의 sallimapp@gmail.com</small></p>
+
+<hr style="margin:2.5rem 0">
+<h2 id="en">English summary</h2>
+<p><small>The Korean text above is the governing version. This summary is provided for
+non-Korean readers (e.g. payment provider review).</small></p>
+<h3>Privacy policy</h3>
+<ul>
+<li><b>What we collect</b>: your email address and message when you contact or order by email;
+your email address and order identifier passed to us by the payment processor after a purchase;
+API keys stored only as a one-way SHA-256 hash; web server access logs (IP address, timestamp,
+request path, user agent) and API call logs (tool name, timestamp, key identifier) for security,
+error diagnosis and rate limiting; anonymous, cookie-less visit statistics via self-hosted umami.</li>
+<li><b>Card details are never stored on our servers</b> — payments are processed by Creem.</li>
+<li><b>Purpose</b>: issuing and managing time-limited licenses, handling support and refunds,
+preventing abuse, improving the service.</li>
+<li><b>Retention</b>: order and license records are kept while needed for refunds and disputes,
+then deleted. Access logs rotate on the server's normal schedule.</li>
+<li><b>Sharing</b>: we do not sell or share personal data with third parties. We use Creem
+(payment processing) and Cloudflare (content delivery and security) as processors; both are
+located outside Korea.</li>
+<li><b>Your rights</b>: you may request access, correction or deletion at the contact address
+below and we will act without delay.</li>
+</ul>
+<h3>Terms of service</h3>
+<ul>
+<li><b>What this is</b>: an information tool built on Korean public data (web and MCP API).
+It is <b>not legal advice</b> and we do not guarantee accuracy or completeness. Decisions made
+using it are the user's responsibility.</li>
+<li><b>Licenses</b>: paid licenses are fixed-term (7 / 30 / 90 days) with <b>no auto-renewal and
+no recurring billing</b>. Renewal means buying again. Sharing or reselling keys is prohibited.</li>
+<li><b>Refunds</b>: payment errors and duplicate charges are refunded in full. If the service is
+discontinued, the unused portion is refunded. Refund requests are handled by email.</li>
+<li><b>Prohibited use</b>: excessive automated calls that harm service stability, and any use that
+violates the terms of the underlying public data sources.</li>
+<li><b>Liability</b>: free tools are provided as is. Liability related to a paid license is limited
+to the amount paid.</li>
+<li><b>Changes</b>: any change to these terms is published on this page.</li>
+</ul>
+<p><small>Operator: Sallim · Contact: sallimapp@gmail.com</small></p>
 </body></html>"""
 
 _LEGAL_HEADERS = {"cache-control": "public, max-age=3600"}

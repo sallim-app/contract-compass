@@ -227,6 +227,15 @@ export default function HomeDashboard({ onDecision, onGlossary }: {
               실제 발주 전 소속 기관 계약 부서와 현행 법령을 확인하세요.
             </p>
             <p>
+              <b>In English</b> — Contract Compass is a Korean public-procurement guidance
+              service. Enter a project name, budget and organization type, and a deterministic
+              rule engine returns the applicable contracting method with its statutory basis
+              (no LLM in the judgment path). Free tier available; paid keys raise call limits
+              only, as fixed-term licenses with no recurring billing.{' '}
+              <a href="/mcp/pricing">Pricing</a> · <a href="/legal/terms#en">Terms &amp; privacy
+              (English)</a> · Contact sallimapp@gmail.com
+            </p>
+            <p>
               <a href="/legal/privacy">개인정보처리방침</a> ·{' '}
               <a href="/legal/terms">이용약관</a> · 운영 살림(Sallim) ·{' '}
               문의 sallimapp@gmail.com

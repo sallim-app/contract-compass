@@ -829,6 +829,19 @@ _PRICING_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
 기간 만료 시 무료 티어로 자연 복귀합니다. 결제가 거절되면 해외(온라인)결제 차단 여부를
 카드사에 확인해 주세요. 기관 구매·세금계산서 등 별도 서류가 필요하면
 <b>contract@sallim.app</b>으로 문의해 주세요.</p>
+<h2>In English</h2>
+<p><b>Contract Compass</b> is a Korean public-procurement guidance service for web and MCP API
+use. Given a project name, budget and organization type, a deterministic rule engine returns the
+applicable contracting method with the statutory basis — no LLM is used in the judgment path, so
+every answer is traceable to a legal source.</p>
+<p><b>Pricing</b>: the free tier gives all 8 tools at 50 calls/day per IP. Paid keys raise the
+call limit only — there is no feature difference. Fixed-term licenses of 7 days ($1.00),
+30 days ($7.00) and 90 days ($16.90). <b>No subscription and no recurring billing</b> — when the
+term ends the key simply reverts to the free tier. The license key is shown once on the payment
+completion screen and an invoice is emailed. Refunds: payment errors and duplicate charges are
+refunded in full; if the service is discontinued, the unused portion is refunded.
+See <a href="/legal/terms#en">terms and privacy policy (English summary)</a>.
+Contact: <b>contract@sallim.app</b>.</p>
 <h2>연결 방법</h2>
 <pre style="background:#f4f4f5;padding:12px;border-radius:8px;overflow-x:auto">
 # Claude Code
