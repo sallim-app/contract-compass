@@ -827,8 +827,13 @@ _PRICING_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
 국제 브랜드)면 개인·법인·정부구매카드 구분 없이 결제됩니다. 결제 완료 화면에서 라이선스
 키가 즉시 표시되고(1회) 영수증(인보이스)은 이메일로 발행됩니다. 자동결제(구독) 없음 —
 기간 만료 시 무료 티어로 자연 복귀합니다. 결제가 거절되면 해외(온라인)결제 차단 여부를
-카드사에 확인해 주세요. 기관 구매·세금계산서 등 별도 서류가 필요하면
-<b>contract@sallim.app</b>으로 문의해 주세요.</p>
+카드사에 확인해 주세요.</p>
+<!-- 세금계산서: 사업자등록 전이라 발행할 수 없다. "문의하라"고만 적어 두면 기관 담당자가
+     결재를 진행하다 막힌다(사장님 지적 2026-08-15) — 지금 무엇이 되고 안 되는지를 먼저 적는다. -->
+<p><b>영수증·세금계산서</b> — 결제 시 <b>결제대행사(Creem) 명의의 영수증(인보이스)</b>이 이메일로
+발행됩니다. <b>현재 세금계산서는 발행하지 않습니다</b>(사업자등록 전). 기관 예산으로 집행하시려면
+세금계산서가 필요한 경우가 많으니, 결재 전에 회계 담당자에게 해외 결제 영수증으로 처리 가능한지
+확인해 주세요. 세금계산서 발행이 가능해지면 이 페이지에 먼저 안내하겠습니다.</p>
 <h2>In English</h2>
 <p><b>Contract Compass</b> is a Korean public-procurement guidance service for web and MCP API
 use. Given a project name, budget and organization type, a deterministic rule engine returns the
