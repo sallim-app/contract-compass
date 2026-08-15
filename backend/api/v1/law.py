@@ -247,44 +247,49 @@ def get_article(ref: str = Query(..., min_length=2, max_length=100)):
     alias_resolved = bool(law_part) and target_law != law_part
 
     col = _get_collection()
+    # (2026-08-15 메모리 수리) 공통 조문번호(제26조 등)는 여러 법령에 걸쳐 수백 청크가
+    # 매칭된다 — limit을 걸면 정답 법령이 잘릴 수 있으므로, **메타데이터만** 전량 받아
+    # 고르고 채택된 1건의 본문만 추가 조회한다(본문 전량 물질화 제거).
     results = col.get(
         where={"article_titles": article},
-        include=["documents", "metadatas"],
+        include=["metadatas"],
     )
-    docs = results.get("documents") or []
+    ids = results.get("ids") or []
     metas = results.get("metadatas") or []
     # 조문번호가 코퍼스 어디에도 없을 때 — 갈림길은 "그 번호가 아무 법령에나 있느냐"가
     # 아니라 "사용자가 부른 법령을 우리가 갖고 있느냐"다(T-2026W33-146).
-    if not docs:
+    if not metas:
         raise _article_not_found(ref, article, target_law)
 
     if not target_law:
         raise _article_not_found(ref, article, "")
 
     # 1단계: law_name 정확 일치
-    best = None
-    for doc, meta in zip(docs, metas):
+    best_id, best_meta = None, None
+    for cid, meta in zip(ids, metas):
         if (meta.get("law_name") or "") == target_law:
-            best = (doc, meta)
+            best_id, best_meta = cid, meta
             break
     # 2단계: target_law가 law_name에 포함 (예: "국가계약법" → "국가계약법 시행령" 매치 방지를 위해 같은 접미사 확인)
-    if best is None:
-        for doc, meta in zip(docs, metas):
+    if best_id is None:
+        for cid, meta in zip(ids, metas):
             law_name = meta.get("law_name") or ""
             # target_law의 마지막 토큰(시행령/시행규칙/법 등)이 law_name 끝부분과 일치할 때만 채택
             if law_name == target_law:
-                best = (doc, meta)
+                best_id, best_meta = cid, meta
                 break
             # "국가계약법" 입력 시 "국가계약법 시행령"으로 가지 않도록: target이 law_name보다 길거나 같을 때만 부분 매치 허용
             if len(target_law) >= len(law_name) and law_name and law_name in target_law:
-                best = (doc, meta)
+                best_id, best_meta = cid, meta
                 break
 
-    if best is None:
+    if best_id is None:
         raise _article_not_found(ref, article, target_law,
                                  also_in=[m.get("law_name") or "" for m in metas])
 
-    doc, meta = best
+    doc_res = col.get(ids=[best_id], include=["documents"])
+    doc = (doc_res.get("documents") or [""])[0] or ""
+    meta = best_meta
     # 긴 조문은 색인 시 parent가 2,000자에서 잘려 저장됨 — 자식 청크(항 단위)를
     # law_ref 순서로 조립해 조문 전문을 복원한다. (2026-07-29 Codex 적대 테스트 발견)
     if meta.get("chunk_level") == "parent":

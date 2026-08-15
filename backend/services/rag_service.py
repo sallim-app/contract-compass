@@ -199,6 +199,10 @@ class RAGService:
     def __init__(self, chroma_path: str):
         self._client = chromadb.PersistentClient(path=chroma_path)
         self._ef = GeminiEmbeddingFunction()
+        # 키워드 부스팅 후보 사전 구축 캐시(정렬 2모드) — 컬렉션 count 변화 시 재구축.
+        # workers=1 장수 프로세스에서 요청마다 law_articles 전량을 물질화하면 아레나
+        # 단편화로 RSS가 계단식 성장한다(+1.0GB/7h 실측, 2026-08-15 메모리 수리).
+        self._kw_boost_cache: dict = {}
         # 2026-05-20: BM25 하이브리드 검색 — Dense(임베딩) + BM25(키워드) RRF 결합
         self._bm25_data: dict | None = None
         try:
@@ -605,6 +609,56 @@ class RAGService:
                     continue
         return extras
 
+    def _kw_boost_items(self, law_col, local: bool) -> list[dict]:
+        """law_articles 키워드 부스팅 후보의 사전 구축 캐시(정렬 2모드).
+
+        (2026-08-15 메모리 수리) 종전에는 요청마다 컬렉션 전량을 파이썬 객체로
+        물질화(요청당 25~50MB)했고, workers=1 장수 프로세스라 그 임시 할당이 아레나
+        단편화로 눌러앉아 RSS +1.0GB/7h 성장의 주범이었다. 필요한 필드만 압축해
+        1회 상주(~20MB)로 바꾸고, 컬렉션 count가 변할 때만 재구축한다(재색인 대응).
+        동시 첫 호출 시 드물게 이중 구축될 수 있으나 멱등이라 무해하다.
+
+        정렬 규약(2026-07-29·07-30 교정 그대로): 실무 절차·한도의 실체인 시행령·
+        시행규칙을 본법보다 앞세우고, 지자체 질문(local=True)은 지방계약법령을 최우선.
+        """
+        count = law_col.count()
+        cache = self._kw_boost_cache
+        if cache.get("count") != count:
+            raw = law_col.get(include=["documents", "metadatas"])
+            entries: list[dict] = []
+            for cid, doc, meta in zip(raw["ids"], raw["documents"], raw["metadatas"]):
+                if not isinstance(meta, dict):
+                    continue
+                doc = doc or ""
+                ln = meta.get("law_name", "") or ""
+                entries.append({
+                    "cid": cid,
+                    "head": (meta.get("law_ref", "") or "") + " " + doc[:400],
+                    "content": doc[:1200],
+                    "law_name": ln,
+                    "law_ref": meta.get("law_ref", ""),
+                    "chunk_level": meta.get("chunk_level", "single"),
+                    "jibang": ln.startswith("지방자치단체"),
+                })
+
+            def _prio(e: dict, local_q: bool) -> int:
+                ln = e["law_name"]
+                if local_q:
+                    if "지방계약법" in ln and "시행령" in ln: return -3
+                    if "지방계약법" in ln and "시행규칙" in ln: return -2
+                    if "지방계약법" in ln: return -1
+                if "국가계약법" in ln and "시행령" in ln: return 0
+                if "국가계약법" in ln and "시행규칙" in ln: return 1
+                if "국가계약법" in ln: return 2
+                if "공기업" in ln or "준정부기관" in ln: return 3
+                if "중소기업제품" in ln or "건설기술" in ln: return 4
+                return 5
+
+            cache["national"] = sorted(entries, key=lambda e: _prio(e, False))
+            cache["local"] = sorted(entries, key=lambda e: _prio(e, True))
+            cache["count"] = count
+        return cache["local" if local else "national"]
+
     def search_all(self, query: str, top_k: int = 5) -> list[dict]:
         """가이드·법령·예규·FAQ 컬렉션 통합 검색. Q&A 용."""
         query = expand_query_abbreviations(query)  # 약어→정식어 확장
@@ -641,49 +695,30 @@ class RAGService:
                 if "지명경쟁" in triggered:
                     triggered.append("지명입찰")
                 if triggered:
-                    all_law = law_col.get(include=["documents", "metadatas"])
-                    # 국가계약법(시행령·시행규칙) 청크 우선 정렬
-                    items = list(zip(all_law["ids"], all_law["documents"], all_law["metadatas"]))
-                    def _priority(item):
-                        # 2026-07-29 교정: 본법·시행령 동순위라 4슬롯을 본법(제7조 등)이
-                        # 독식해 실무 핵심(시행령 제26조 등)이 구조적으로 배제됐음 —
-                        # 실무 절차·한도의 실체는 시행령·시행규칙이므로 이를 최우선.
-                        m = item[2] or {}
-                        ln = m.get("law_name", "") or ""
-                        # 2026-07-30: 지자체 질문은 지방계약법령이 정답 소스 — 국가계약법이
-                        # 항상 앞서면 지방 시행규칙(지역제한 150억 등)이 슬롯 밖으로 밀렸음.
-                        if is_local_gov_q:
-                            if "지방계약법" in ln and "시행령" in ln: return -3
-                            if "지방계약법" in ln and "시행규칙" in ln: return -2
-                            if "지방계약법" in ln: return -1
-                        if "국가계약법" in ln and "시행령" in ln: return 0
-                        if "국가계약법" in ln and "시행규칙" in ln: return 1
-                        if "국가계약법" in ln: return 2
-                        if "공기업" in ln or "준정부기관" in ln: return 3
-                        if "중소기업제품" in ln or "건설기술" in ln: return 4
-                        return 5
-                    items.sort(key=_priority)
+                    # (2026-08-15 메모리 수리) 종전엔 여기서 컬렉션 전량(8,953청크)을
+                    # get()해 요청당 25~50MB 임시 객체를 만들었다 — RSS 계단식 성장의
+                    # 주범. 사전 구축 캐시(정렬 완료·필요 필드만)를 순회하는 것으로 교체.
+                    # 정렬 규약(시행령 우선·지자체 모드)은 _kw_boost_items에 그대로 이식.
                     added = 0
-                    for cid, doc, meta in items:
+                    for e in self._kw_boost_items(law_col, is_local_gov_q):
                         if added >= 6:  # 키워드 부스팅 최대 6건 (시행령 우선 정렬 후)
                             break
-                        if not isinstance(meta, dict) or cid in seen:
+                        if e["cid"] in seen:
                             continue
-                        if not is_local_gov_q and (meta.get("law_name", "") or "").startswith("지방자치단체"):
+                        if not is_local_gov_q and e["jibang"]:
                             continue
                         # 2026-07-29 교정: child(항 단위, 코퍼스 65%)를 배제하던 필터 제거 —
                         # 정답이 child(예: 제26조 제1항 (계속1)의 공사 4억)에 있는 경우가 많다.
                         # 검사 창도 law_ref+본문 400자로 확대(첫 200자가 무관 내용인 청크 대응).
-                        head = (meta.get("law_ref", "") or "") + " " + (doc or "")[:400]
-                        if any(kw in head for kw in triggered):
-                            seen[cid] = 0.95
+                        if any(kw in e["head"] for kw in triggered):
+                            seen[e["cid"]] = 0.95
                             all_chunks.append({
-                                "chunk_id": cid,
-                                "document_id": (meta.get("law_name") or LAW_ARTICLES_COLLECTION),
-                                "section_title": meta.get("law_ref", ""),
+                                "chunk_id": e["cid"],
+                                "document_id": (e["law_name"] or LAW_ARTICLES_COLLECTION),
+                                "section_title": e["law_ref"],
                                 "chunk_type": "law_article",
-                                "chunk_level": meta.get("chunk_level", "single"),
-                                "content": doc[:1200],
+                                "chunk_level": e["chunk_level"],
+                                "content": e["content"],
                                 "relevance_score": 0.95,
                                 "contract_type": "law",
                                 "source_type": "law",

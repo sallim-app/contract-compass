@@ -29,9 +29,22 @@ class SessionStore:
             )
             self._conn.commit()
             self._store = None
+            # (2026-08-15) 만료행 일괄 청소 — 종전엔 "그 세션을 다시 읽을 때만" 지워서
+            # 접근되지 않은 세션(사업명·사업개요 포함)이 무기한 잔존했다(실측 3,231행 전부
+            # 만료 상태). 기동 시 1회 + 세션 생성 때마다 쓸어, 개인정보처리방침의
+            # "위저드 입력 24시간 내 파기" 문구가 실제와 일치하게 한다.
+            self._db_sweep()
         else:
             self._conn = None
             self._store = {}
+
+    def _db_sweep(self) -> None:
+        """TTL 지난 세션 전부 삭제(수천 행 수준이라 밀리초 단위)."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM sessions WHERE created_at < ?", (time.time() - self._ttl,)
+            )
+            self._conn.commit()
 
     # ── 영속(SQLite) 경로 ───────────────────────────────────────
     def _db_get(self, session_id: str) -> dict | None:
@@ -49,6 +62,7 @@ class SessionStore:
             return json.loads(data)
 
     def _db_create(self) -> str:
+        self._db_sweep()  # 새 세션이 생길 때마다 만료분 청소 — 사용량에 비례해 자연 유지
         session_id = str(uuid.uuid4())
         with self._lock:
             self._conn.execute(

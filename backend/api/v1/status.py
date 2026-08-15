@@ -147,7 +147,21 @@ def _read_latest_test() -> tuple[int, int, str | None, list[dict]]:
         return 0, 0, None, []
 
 
-def _chunk_counts() -> dict[str, int]:
+def _chroma_mtime() -> float:
+    """캐시 무효화 키 — 코퍼스 재색인 시에만 바뀐다. 파일 없으면 0(캐시 1건으로 수렴)."""
+    try:
+        return (_CHROMA_PATH / "chroma.sqlite3").stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+# (2026-08-15 메모리 수리) 아래 두 함수는 요청마다 전 컬렉션(10만+ 메타 행)을 전수
+# 스캔해 요청당 30~60MB 임시 할당을 만들었다 — 상태 페이지 폴링에 비례해 RSS가
+# 성장한 주범 중 하나. 같은 파일의 다른 로더(@lru_cache, :123·:290)와 동일 규약으로
+# 캐시하되, 코퍼스 재색인(chroma.sqlite3 mtime 변화)이면 재계산한다.
+@lru_cache(maxsize=4)
+def _chunk_counts_at(mtime: float) -> dict[str, int]:
+    del mtime  # 캐시 키 전용
     if not _CHROMA_PATH.exists():
         return {}
     try:
@@ -157,8 +171,14 @@ def _chunk_counts() -> dict[str, int]:
         return {}
 
 
-def _topic_stats() -> tuple[list[dict], int]:
+def _chunk_counts() -> dict[str, int]:
+    return _chunk_counts_at(_chroma_mtime())
+
+
+@lru_cache(maxsize=4)
+def _topic_stats_at(mtime: float) -> tuple[list[dict], int]:
     """모든 컬렉션의 topics 메타데이터 집계."""
+    del mtime  # 캐시 키 전용
     if not _CHROMA_PATH.exists():
         return [], 0
     try:
@@ -181,6 +201,10 @@ def _topic_stats() -> tuple[list[dict], int]:
         return [{"topic": t, "count": n} for t, n in top10], tagged
     except Exception:
         return [], 0
+
+
+def _topic_stats() -> tuple[list[dict], int]:
+    return _topic_stats_at(_chroma_mtime())
 
 
 def _glossary_count() -> int:
