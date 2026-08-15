@@ -796,11 +796,13 @@ def _buy(slot: str) -> str:
     return f'<a href="{_CHECKOUT_LINKS[slot]}">구매</a>'
 
 
+# 개통 전 안내. **"메일로 주문하면 키를 보내준다"는 문구를 두지 않는다**(2026-08-15) —
+# 결제대행사 심사에서 플랫폼 외부 결제 유도(circumvention)로 읽히는 표현이고, 실제로 우리는
+# 대금을 그렇게 받은 적이 없다. 무료 티어 안내 + 개통 알림 신청만 남긴다.
 _CLOSED_NOTICE = """<p style="background:#fff6e5;border:1px solid #e0b070;padding:12px 14px;
-border-radius:8px"><b>결제 개통 준비 중입니다.</b> 카드 결제사(Creem) 계정 검증이 끝나지
-않아 구매 버튼을 열어두지 않았습니다. <b>무료 티어(IP당 50콜/일)로 도구 8종을 지금 그대로
-쓸 수 있고</b>, 유료 한도가 당장 필요하시면 <b>contract@sallim.app</b>으로 알려 주세요 —
-개통 즉시(또는 수동 발급으로) 키를 보내 드립니다.</p>"""
+border-radius:8px"><b>카드 결제 개통을 준비 중입니다.</b> 결제 수단 준비가 끝나면 이 페이지에서
+바로 구매할 수 있습니다. 그동안 <b>무료 티어(IP당 50콜/일)로 도구 8종을 제한 없이</b> 쓰실 수
+있습니다. 개통 알림을 원하시면 <b>contract@sallim.app</b>으로 문의해 주세요.</p>"""
 
 # 템플릿 치환은 .format()이 아니라 replace를 쓴다 — 아래 pre 블록의 Cursor 설정 예시에
 # 중괄호가 들어 있어 format이 깨진다.
