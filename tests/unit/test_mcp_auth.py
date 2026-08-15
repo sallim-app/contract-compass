@@ -116,14 +116,17 @@ def test_origin_direct_ignores_proxy_headers():
     assert rotated == {auth.subject_hash("8.8.8.8")}
 
 
-def test_subject_is_hashed_and_stable():
+def test_subject_is_hashed_and_stable(monkeypatch):
     """②원문 IP가 subject·쿼터 키에 남지 않되, 같은 IP는 항상 같은 subject다."""
     a = auth.resolve_access(_req(headers={"x-real-ip": "8.8.8.8"}))
     assert a.subject == auth.subject_hash("8.8.8.8") and "8.8.8.8" not in a.subject
     assert a.subject == auth.resolve_access(_req(headers={"x-real-ip": "8.8.8.8"},
                                                  host="172.18.0.9")).subject
-    # 우리 주소는 해시 전 원문으로 판정해 결과만 남긴다
-    for ip in ("168.107.47.60", "152.69.232.84", "10.0.1.14"):
+    # 우리 주소는 해시 전 원문으로 판정해 결과만 남긴다.
+    # **실제 오리진 IP를 테스트에 쓰지 않는다**(2026-08-15): 공개 저장소라 테스트가 곧 노출이다.
+    # 문서용 예약 대역(TEST-NET-3, RFC 5737)을 주입해 같은 경로를 검증한다.
+    monkeypatch.setattr(auth, "OURS", {"203.0.113.10", "203.0.113.11"})
+    for ip in ("203.0.113.10", "203.0.113.11", "10.0.1.14"):
         assert auth.resolve_access(_req(headers={"x-real-ip": ip})).is_internal is True
 
 

@@ -38,10 +38,13 @@ PRICING_URL = os.environ.get("CONTRACT_MCP_PRICING_URL", "https://contract.salli
 # 막히므로 무제한. 외부 트래픽은 전부 nginx 경유라 x-real-ip가 실IP로 덮인다.
 UNLIMITED_IPS = {"127.0.0.1", "::1"}
 
-# 우리 서버 공인 IP — naru / quant. subject를 해시로 바꾸면 집계기가 주소 형태로
-# 내외부를 판정할 수 없으므로, **해시 전 원문 IP로 여기서 판정해 결과(is_internal)만
-# 남긴다** (/data/ops/mcp_growth.py의 OURS와 같은 집합).
-OURS = {"168.107.47.60", "152.69.232.84"}
+# 우리 서버 공인 IP — subject를 해시로 바꾸면 집계기가 주소 형태로 내외부를 판정할 수
+# 없으므로, **해시 전 원문 IP로 여기서 판정해 결과(is_internal)만 남긴다**.
+# ⚠️ **값을 소스에 박지 않는다**(2026-08-15): 이 저장소는 공개다 — 오리진 IP가 코드에 있으면
+# Cloudflare 뒤에 숨긴 주소를 공개하는 셈이다(익명 raw fetch로 노출 실측). 값은 systemd
+# Environment 또는 .env로 주입한다. 미설정이면 빈 집합 = 우리 호출이 외부로 집계될 뿐
+# 서비스는 정상 동작한다(fail-open이 아니라 분모가 보수적으로 커지는 쪽).
+OURS = {ip.strip() for ip in os.environ.get("CONTRACT_OURS_IPS", "").split(",") if ip.strip()}
 
 
 # ------------------------------------------------- free 티어 subject 해시
