@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Step1Input, Step1Response, Step2Response, AskResponse } from '../types'
+import type { Step1Input, Step1Response, Step2Response } from '../types'
 import { getDeviceId } from '../lib/deviceId'
 
 const api = axios.create({ baseURL: '/api/v1', timeout: 60000 })
@@ -133,9 +133,6 @@ export const runTests = (token: string) =>
 
 export const getRules = (token: string) =>
   api.get('/admin/rules', { headers: { 'X-Admin-Token': token } }).then((r) => r.data)
-
-export const askQuestion = (question: string) =>
-  api.post<AskResponse>('/ask', { question }).then((r) => r.data)
 
 export type GlossaryTerm = { term: string; definition: string; related: string[] }
 

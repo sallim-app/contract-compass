@@ -110,7 +110,7 @@ async def submit_feedback(
     question: str | None = Form(None),
     answer: str | None = Form(None),
     # 2026-06-02: 사용자가 의견 줄 때 화면 컨텍스트 자동 기록
-    page: str | None = Form(None),                  # AskPage / Step1Page / Step2Page / Step3Page / NoticeDraftPage
+    page: str | None = Form(None),                  # Step1Page / Step2Page / Step3Page / NoticeDraftPage
     step: str | None = Form(None),                  # 1 | 2 | 3 | 4
     project_name: str | None = Form(None),          # 의견 작성 당시 사업명
     contract_type: str | None = Form(None),         # service|product|construction

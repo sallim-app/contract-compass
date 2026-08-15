@@ -37,8 +37,7 @@ app.add_middleware(
 _USAGE_LOG = BASE_DIR / "logs" / "usage_events.jsonl"
 _USAGE_PREFIXES = (
     "/api/v1/filter/step1", "/api/v1/filter/step2",
-    "/api/v1/ask",
-)
+)  # /api/v1/ask는 종료(D-2026W33-22) — 410만 반환하므로 계측 대상이 아니다
 
 
 # CF 엣지 캐시 대상(2026-07-30 P2): 결정론 읽기 GET — 성공 응답에만 Cache-Control을 실어

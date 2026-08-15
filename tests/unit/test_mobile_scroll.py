@@ -28,7 +28,6 @@ RESPONSIVE = SRC / "styles" / "designer" / "flow-responsive.css"
 # 전면(풀스크린) 오버레이 안에서 실제로 스크롤되는 요소들 — 뒤 문서로 스크롤이 이어지면
 # 인앱 브라우저에서 "모달을 만졌는데 뒤 페이지가 움직이는" 상태가 된다.
 OVERLAY_SCROLLERS = [
-    (SRC / "styles" / "designer" / "ask.css", ".ask-messages"),
     (SRC / "styles" / "designer" / "glossary.css", ".gl-body"),
     (SRC / "styles" / "designer" / "source-drawer.css", ".src-scroll"),
 ]

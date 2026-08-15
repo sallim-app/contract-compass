@@ -6,7 +6,8 @@ https://contract.sallim.app/mcp)로 붙어 계약나침반 기능을 직접 호�
 
 설계 원칙(2026-07-30): MCP 도구는 전부 **무LLM** — 클라이언트가 이미 LLM이므로
 백엔드는 결정론 판정(decide, skip_llm)과 검색 원문(search_*)만 제공한다.
-백엔드 OpenAI를 태우던 ask 도구는 제거(웹 UI 전용 /ask는 그대로).
+백엔드 OpenAI를 태우던 ask 도구는 제거. 웹 /ask도 2026-08-15 폐지(D-2026W33-22) —
+이 서버가 법령 질의의 유일한 경로다.
 
 실행: python3 mcp/server.py                  # stdio (로컬 검증·codex 등록용)
       python3 mcp/server.py streamable-http  # 원격 서빙 (systemd contract-mcp.service)

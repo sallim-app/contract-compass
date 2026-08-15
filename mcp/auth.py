@@ -7,8 +7,8 @@ SDK 내장 auth층은 OAuth 전제로 전송층 401을 강제해 "키 없는 무
 
 IP 신뢰 순서는 **x-real-ip > cf-connecting-ip > xff 첫 항목**이다(2026-08-07 정정,
 T-2026W32-105). 첫 이식본은 cf 우선이었는데 이 토폴로지에서 그게 틀렸다 —
-`client_ip()` 헤더 주석에 근거를 적어 뒀다. backend/services/chat_access.py는
-2026-08-04 보안 감사에서 이미 같은 순서로 고쳐졌는데 이 파일에 이식되지 않았다.
+`client_ip()` 헤더 주석에 근거를 적어 뒀다. (같은 순서를 먼저 적용했던
+backend/services/chat_access.py는 웹 Q&A 폐지로 삭제됨 — D-2026W33-22.)
 free 티어 subject는 원문 IP가 아니라 `sha256(salt|IP)[:12]`다(D-2026W32-33 계측 규약:
 집계 산출물·상태파일에 원문 IP·UA 미저장).
 """

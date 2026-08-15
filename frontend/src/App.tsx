@@ -1,14 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useWizardStore } from './store/wizardStore'
 import Icon from './components/Icon'
-import ChatSidebar from './components/ChatSidebar'
-import AuthButton from './components/AuthButton'
 import Step1Page from './pages/Step1Page'
 import Step2Page from './pages/Step2Page'
 import Step3Page from './pages/Step3Page'
 import Step4Page from './pages/Step4Page'
 import AdminPage from './pages/AdminPage'
-import AskPage from './pages/AskPage'
 import GlossaryPage from './pages/GlossaryPage'
 // 룰트리는 mermaid(대용량) 의존 → 열 때만 지연 로드(초기 번들 경량 유지)
 // 룰 결정트리는 비공개 전환(2026-07-29) — RuleTreePage 진입점 제거, API도 admin 전용
@@ -20,24 +17,6 @@ import type { Step1Input } from './types'
 
 const APP_SESSION_ID = `app-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-// 로그인 복귀 컨텍스트(?return=ask|decide) — 채팅에서 로그인해도 홈으로 떨어지지 않게
-// 원래 화면으로 되돌린다(login()이 심는 쿼리). 소비 후 URL에서 제거.
-// ⚠️ 모듈 레벨 즉시실행 금지: import가 main.tsx의 captureAuthFromHash()보다 먼저 돌아
-// replaceState가 #access_token 해시를 지워버린다 — 첫 렌더(useState 초기화) 시점 지연 소비.
-let _loginReturn: string | null | undefined
-function consumeLoginReturn(): string | null {
-  if (_loginReturn === undefined) {
-    const p = new URLSearchParams(window.location.search)
-    const r = p.get('return')
-    if (r) {
-      p.delete('return')
-      const qs = p.toString()
-      history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + (r === 'decide' ? '#decide' : ''))
-    }
-    _loginReturn = r
-  }
-  return _loginReturn
-}
 
 const ALLOWED_EXT = ['.csv', '.xlsx', '.xls', '.pdf', '.jpg', '.jpeg', '.png', '.txt', '.json', '.docx', '.doc']
 const MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -466,14 +445,11 @@ export default function App() {
   const { currentStep, reset, setStep, step1Input, setStep1Input } = useWizardStore()
   const [showAdmin, setShowAdmin] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
-  const [showAsk, setShowAsk] = useState(() => consumeLoginReturn() === 'ask')
   const [showGlossary, setShowGlossary] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   // 홈/대시보드 — 해시 없음('') 또는 '#home'이 홈, 위저드는 '#decide'로 진입.
   const isHomeHash = (h: string) => h === '' || h === '#home'
   const [showHome, setShowHome] = useState(() =>
-    // 채팅 복귀(return=ask) 시 홈 오버레이(z 1000)가 Ask 모달(z 50)을 덮으므로 홈 생략
-    consumeLoginReturn() !== 'ask' &&
     typeof window !== 'undefined' && isHomeHash(window.location.hash)
   )
   useEffect(() => {
@@ -540,7 +516,6 @@ export default function App() {
             <span className="dt-brand-sub">공공계약 방법 결정 도우미</span>
           </button>
           <div className="dt-top-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AuthButton />
             <button className="dt-help" onClick={() => setShowFeedback(true)}>
               <Icon name="message-circle" size={15} /> <span>의견 보내기</span>
             </button>
@@ -554,7 +529,6 @@ export default function App() {
       </header>
 
       <div className={`dt-cols ${showRail ? 'has-rail' : 'no-rail'}`}>
-        <ChatSidebar />
         {showRail && <Rail step={currentStep} step1Input={step1Input} />}
         <main className="dt-main">
           <div className={`dt-content ${currentStep === 1 ? 'narrow' : ''}`}>
@@ -572,9 +546,6 @@ export default function App() {
                   처음부터 다시 시작
                 </button>
               )}
-              <button onClick={() => setShowAsk(true)} className="text-xs text-blue-500 hover:text-blue-700 font-semibold underline">
-                💬 계약 Q&A
-              </button>
               <button onClick={() => setShowGlossary(true)} className="text-xs text-purple-500 hover:text-purple-700 font-semibold underline">
                 📖 용어사전
               </button>
@@ -596,13 +567,11 @@ export default function App() {
         />
       )}
       {showAdmin && <AdminPage onClose={() => setShowAdmin(false)} />}
-      {showAsk && <AskPage onClose={() => setShowAsk(false)} />}
       {showGlossary && <GlossaryPage onClose={() => setShowGlossary(false)} />}
       {showHome && <HomeDashboard
-        // 전환 ①: 홈 카드에서 위저드/Q&A로 들어간 순간. 방문(pageview)과 '쓰기 시작'을
+        // 전환 ①: 홈 카드에서 위저드로 들어간 순간. 방문(pageview)과 '쓰기 시작'을
         // 가르는 지점이라 유입 품질 판정의 분모가 된다.
         onDecision={() => { track('wizard-start'); setShowHome(false); window.location.hash = '#decide' }}
-        onAsk={() => { track('ask-open', { from: 'home' }); setShowAsk(true) }}
         onGlossary={() => { setShowGlossary(true) }} />}
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
 

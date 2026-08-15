@@ -1,10 +1,10 @@
 // 홈/대시보드 — 계약나침반 진입 화면 (dashboard.css 클래스 사용).
-// 진입: /#home (또는 해시 없음). 카드 → 계약방법 결정 위저드 / 계약 Q&A / 용어사전.
+// 진입: /#home (또는 해시 없음). 카드 → 계약방법 결정 위저드 / 용어사전 / MCP 서버.
+// 계약 Q&A 챗봇 카드는 제거됨(D-2026W33-22 — 웹 LLM 축 종료, MCP 축만 유지).
 
-import AuthButton from '../components/AuthButton'
 
-export default function HomeDashboard({ onDecision, onAsk, onGlossary }: {
-  onDecision: () => void; onAsk: () => void; onGlossary: () => void
+export default function HomeDashboard({ onDecision, onGlossary }: {
+  onDecision: () => void; onGlossary: () => void
 }) {
   return (
     // 홈은 문서(body) 스크롤로 흐른다 — position:fixed 오버레이 스크롤러로 띄우면
@@ -21,7 +21,6 @@ export default function HomeDashboard({ onDecision, onAsk, onGlossary }: {
             <span className="tb-rule" aria-hidden="true" />
             <span><span className="tt">계약나침반</span> <span className="ts">공공계약 방법 결정 도우미</span></span>
           </div>
-          <div className="tb-right" style={{ marginLeft: 'auto' }}><AuthButton /></div>
         </div>
 
         {/* 본문 */}
@@ -50,24 +49,6 @@ export default function HomeDashboard({ onDecision, onAsk, onGlossary }: {
               </div>
               <div className="ecta">
                 <button className="btn btn-primary" onClick={onDecision}>계약방법 결정 시작 →</button>
-              </div>
-            </div>
-
-            {/* 계약 Q&A (법령 챗봇) */}
-            <div className="entry">
-              <div className="ehead">
-                <span className="eico eico-aud">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                </span>
-                <div><h3>계약 Q&A 챗봇</h3><div className="ewho">법령·실무 질문 자유 응답</div></div>
-              </div>
-              <p>계약 절차·법령 해석·실무 처리 방법을 자유롭게 질문하세요. 답변마다 근거 조문·출처를 함께 제시합니다.</p>
-              <div className="emini">
-                <div className="mi"><span className="miv num">RAG</span><span className="mik">출처 제시</span></div>
-                <div className="mi"><span className="miv num">법령</span><span className="mik">조문 인용</span></div>
-              </div>
-              <div className="ecta">
-                <button className="btn btn-ghost" onClick={onAsk}>계약 Q&A 열기 →</button>
               </div>
             </div>
 

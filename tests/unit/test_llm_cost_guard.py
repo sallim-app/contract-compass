@@ -3,7 +3,7 @@
 검증관 지적(rate-limit 일부 경로 미적용, 전역 상한 없음) 해소를 확인한다:
 - rate_limit_llm 의존성이 IP별 한도 + 전역 일일 상한을 둘 다 검사.
 - record_llm_call이 IP별 카운터와 전역 일일 카운터를 동시에 증가.
-- filter step1/step2·ask·classify 전 LLM 경로가 rate_limit_llm + record_llm_call 배선.
+- filter step1/step2·classify 전 LLM 경로가 rate_limit_llm + record_llm_call 배선.
 
 무거운 임포트(chromadb 등) 회피 위해 전 경로 적용은 소스 수준으로 확인(빠른 단위 테스트).
 """
@@ -138,7 +138,7 @@ def _src(name: str) -> str:
     return (V1 / name).read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("fname", ["filter.py", "ask.py", "classify.py"])
+@pytest.mark.parametrize("fname", ["filter.py", "classify.py"])  # ask.py는 410 묘비(LLM 미호출)
 def test_all_llm_routes_import_guard(fname):
     src = _src(fname)
     assert "rate_limit_llm" in src, f"{fname}: rate_limit_llm 미적용"

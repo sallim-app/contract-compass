@@ -20,7 +20,9 @@
 ## 이 저장소의 중심 규칙
 
 1. **모든 MCP 도구는 무LLM** — 클라이언트가 이미 LLM이다. 서버는 결정론 판정과 원문만 준다.
-   백엔드 LLM(웹 /ask 전용)을 MCP 경로로 되살리지 마라(일일 캡·비용 축이 갈린다).
+   백엔드 LLM은 위저드 분류·설명(filter/classify) 전용이다. 웹 Q&A 챗봇(`/api/v1/ask`)은
+   **폐지**(D-2026W33-22, 2026-08-15) — 410 묘비만 남았다. MCP 경로로 되살리지 마라
+   (일일 캡·비용 축이 갈린다).
 2. **폴백·절단 은폐 금지.** 요청과 다른 것을 줬으면 응답에 적는다 — 상한으로 잘랐으면 무엇이
    잘렸는지(`omitted_candidates`), 요청 건수를 못 지켰으면 그 사실을, 코퍼스 밖 법령이면
    "없다"가 아니라 "우리가 못 본다"(`law_in_corpus:false`)를. 이 프로젝트에서 반복 재발한
@@ -42,19 +44,21 @@
 - **`evaluation.xml`** — 평가셋(사람이 읽는 문항지). 전 답이 실측이고 알려진 미수리 결함을
   정직 공시한다. 외부가 우리 판정을 되짚는 경로 = `tools/mcp_regression.py --endpoint <공개주소>`.
 - **`tests/question_bank.json`** — 공공계약 빈출 질문은행(배터리·회귀·콘텐츠 공용). 새 결함은
-  여기에 질문 추가 → 수리 → `R*` 회귀 순서로 고정한다. 웹 /ask 회귀는 `tests/qa_bank.json`.
+  여기에 질문 추가 → 수리 → `R*` 회귀 순서로 고정한다.
 - **`docs/DELAY-PENALTY-AXIS.md`** — 이행단계 축(지체상금·지연배상금) 설계. 국가/지방 요율이
   다르다는 실측표와 인식 경계 계약(지체일수는 우리가 확정하지 않는다)이 여기 있다.
 - **`docs/RUNBOOK-failover.md`**(장애 이관) · **`docs/POSITIONING.md`**(제품 위치) ·
   **`docs/PROGRAMMATIC_SEO.md`**(생성 페이지) · **`README.md`**(사용자용 도구 표).
 
-## 품질 루프 — 결함은 이 3개 경로로만 들어온다
+## 품질 루프 — 결함은 이 2개 경로로만 들어온다
 
 | 경로 | 무엇 | 주기 |
 |---|---|---|
 | 결정론 회귀 `tools/mcp_regression.py` | 수리한 결함의 재발(LLM 무소모) | 매일 04:30 `/data/ops/mcp-qa-nightly.sh` |
-| 웹 회귀 `tools/qa_regression.py` | /ask 답변 품질(질문은행) | 같은 슬롯 |
 | 외부 탐침 `mcp-claude-probe.sh` / `mcp-codex-probe.sh` | 고객 클라이언트 시선의 신규 결함 | 목(codex)·금(claude) |
+
+웹 /ask 회귀(`tools/qa_regression.py`·`tests/qa_bank.json`)는 챗봇 폐지와 함께 제거됐다
+(D-2026W33-22) — 야간 스크립트에서 호출부를 빼지 않으면 매일 실패로 뜬다.
 
 탐침 발견은 `logs/claude_probe_last.txt`·`logs/codex_probe_last.txt`에 남고 ops 인박스로
 보고된다. **발견을 읽고 수리→회귀까지 가야 끝난다** — 로그에 고이면 다음 회차가 같은 것을

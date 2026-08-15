@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     # 채팅(ask) 접근 게이팅 (2026-07-29): 익명은 IP당 1일 chat_free_daily회 무료,
     # 이후 Supabase(GoTrue) Google 로그인 필요. 비어있으면 로그인 검증 불가 →
     # 익명 무료 한도만 적용되고 로그인 요구 시 503 (fail-closed, admin_token과 동일 철학).
-    supabase_jwt_secret: str = ""
     chat_free_daily: int = 2
     chat_quota_file: str = str(BASE_DIR / "data" / "chat_anon_quota.json")
 

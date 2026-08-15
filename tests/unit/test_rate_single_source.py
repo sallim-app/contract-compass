@@ -135,58 +135,8 @@ def test_참조가_실재하는_룰을_가리킨다(engine):
                 f"{rule['rule_id']}의 참조 {ref}에 pass_score_by_amount가 없다"
 
 
-# ── /ask 결정론 주입 (2026-08-05 P0 후반부) ──────────────────────────────────
-# 룰엔진을 고쳐도 챗봇은 여전히 RAG로 답한다. 코퍼스의 `(감사원)공공계약 실무가이드.pdf`는
-# **개정 전 세대**라 85.495%가 14회 나오고 현행 값(87.495/88.745/89.745)은 0회다.
-# 청크에 발간연도·시행일 메타가 없어 신선도로 거를 수도 없어서, 어느 청크가 rerank 1위를
-# 먹느냐에 답이 달렸다 — 같은 질문에 회차마다 답이 바뀐 이유가 이것이다.
-# 요율은 검색할 것이 아니라 금액에서 계산되는 값이므로 룰엔진 답을 [확정 사실]로 주입한다.
-
-from backend.api.v1.ask import (  # noqa: E402
-    _deterministic_rate_block,
-    _parse_amount,
-)
-
-
-@pytest.mark.parametrize("q,expected", [
-    ("추정가격 70억원 종합공사의 적격심사 낙찰하한율은?", "87.495%"),
-    ("30억 공사 낙찰하한율 알려줘", "88.745%"),
-    ("5억원 공사 낙찰하한율은?", "89.745%"),
-    ("7,000,000,000원 공사의 낙찰하한율은?", "87.495%"),
-])
-def test_공사_요율_질문엔_결정론_값이_주입된다(q, expected):
-    block = _deterministic_rate_block(q)
-    assert "[확정 사실" in block, f"주입되지 않았다: {q}"
-    assert expected in block, f"{q} → {block!r}"
-    # 구 자료의 값이 확정 사실로 새어나가면 안 된다
-    assert "85.495" not in block
-
-
-@pytest.mark.parametrize("q", [
-    "공사 낙찰하한율이 뭐야?",              # 금액 없음
-    "70억이랑 30억 공사 낙찰하한율 차이는?",  # 금액 2개 — 어느 쪽인지 모른다
-    "단순노무용역 소액수의 낙찰하한율은?",     # 공사 아님
-    "70억 공사 계약방법 알려줘",             # 요율 질문 아님
-])
-def test_애매하면_주입하지_않는다(q):
-    """틀린 주입은 지금보다 나쁘다 — 확정이 아닌 것을 확정이라 부르지 않는다."""
-    assert _deterministic_rate_block(q) == "", q
-
-
-def test_금액_파싱은_하나일_때만_확정한다():
-    assert _parse_amount("70억원") == 7_000_000_000
-    assert _parse_amount("1.5억") == 150_000_000
-    assert _parse_amount("7,000,000,000원") == 7_000_000_000
-    assert _parse_amount("금액 없음") is None
-    assert _parse_amount("70억과 30억") is None
-
-
-def test_시스템_프롬프트가_확정사실_우선을_지시한다():
-    """주입만 하고 프롬프트가 침묵하면 LLM이 검색 문서를 골라도 막을 근거가 없다."""
-    src = (ROOT / "backend" / "api" / "v1" / "ask.py").read_text(encoding="utf-8")
-    prompt = src.split('_SYSTEM_PROMPT = """')[1].split('"""')[0]
-    assert "[확정 사실]" in prompt, "확정 사실 우선 규칙이 프롬프트에 없다"
-
+# ── /ask 결정론 요율 주입 절은 삭제됨 — 웹 Q&A 폐지(D-2026W33-22)로 주입 대상이 사라졌다.
+#    요율의 진실원은 룰엔진(rules/contract_rules.json)이며 위 케이스들이 그것을 지킨다.
 
 # ── 별표 번호는 원문 매핑을 따른다 (2026-08-05 F3 수리) ──────────────────────
 # 계기: 70억 응답 하나에 `method: "…(적격심사 별표4)"`와 `byeolpyo: "별표3"`이 공존했다.

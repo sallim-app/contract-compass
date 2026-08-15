@@ -158,26 +158,3 @@ export interface Step2Response {
   knowledge_web?: KnowledgeWebSources
 }
 
-export interface AskSource {
-  chunk_id: string
-  section_title: string
-  excerpt: string
-  content?: string       // 전체 본문 (사용자 검증용)
-  relevance_score: number
-  source_type: 'textbook' | 'guide' | 'law' | 'internal' | 'faq'
-  document_id?: string   // 어느 문서
-  chunk_level?: string   // parent | child | single (Hierarchical RAG)
-  matched_via?: string   // vector | bm25 | doc2query | hybrid
-  matched_question?: string  // Doc2Query 매칭 시 가상질문 텍스트
-}
-
-export interface AskResponse {
-  answer: string
-  sources: AskSource[]
-  // 2026-06-01: 법령 조문 환각 검증 (본문에 인용된 조문 중 sources에 없는 것)
-  unverified_citations?: string[]
-  // 2026-06-01: sources 평균 관련도 — UI에서 0.6 미만이면 confidence 경고 배너
-  avg_relevance?: number | null
-  // 2026-06-01: ChatSidebar 등에서 부가 timing/메트릭
-  timing?: Record<string, number>
-}

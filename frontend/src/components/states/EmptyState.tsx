@@ -49,7 +49,7 @@ const EMPTY_VARIANTS: Record<EmptyVariant, {
   sub: string
 }> = {
   search:   { illust: IllustEmptySearch,   title: '검색 결과가 없습니다',     sub: '다른 키워드로 다시 검색해 보세요.' },
-  bookmark: { illust: IllustEmptyBookmark, title: '아직 북마크가 없습니다',   sub: 'Q&A 답변에서 북마크 버튼을 눌러 저장하세요.' },
+  bookmark: { illust: IllustEmptyBookmark, title: '아직 북마크가 없습니다',   sub: '분석 결과에서 북마크 버튼을 눌러 저장하세요.' },
   history:  { illust: IllustEmptyHistory,  title: '최근 이력이 없습니다',     sub: '분석한 사업이 여기에 시간순으로 쌓입니다.' },
 }
 
