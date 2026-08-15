@@ -1,7 +1,77 @@
-// 홈/대시보드 — 계약나침반 진입 화면 (dashboard.css 클래스 사용).
-// 진입: /#home (또는 해시 없음). 카드 → 계약방법 결정 위저드 / 용어사전 / MCP 서버.
-// 계약 Q&A 챗봇 카드는 제거됨(D-2026W33-22 — 웹 LLM 축 종료, MCP 축만 유지).
+// 랜딩(첫 화면) — MCP-first (T-2026W33-181 / D-2026W33-23, 2026-08-15).
+//
+// 이 표면의 목적은 계약나침반 웹앱을 전시하는 게 아니라 **MCP의 가치를 사용예시로
+// 알리는 것**이다(사장님 2026-08-14 재확정). 그래서 첫 화면은 실제 도구 호출 기록
+// (사용자 질문 → 도구 호출 → 근거 답변)이고, 웹 위저드는 맨 아래 '보조 데모'다.
+// 카드 나열형 대시보드로 되돌리지 마라 — 되돌리면 결정 D-2026W33-23을 무효화한다.
+//
+// 전시하는 도구 출력은 전부 실측이다(frontend/src/data/mcpScenarios.ts 머리말 참조).
+// 진입: /#home (또는 해시 없음). 계약 Q&A 챗봇은 폐지됨(D-2026W33-22).
 
+import { useState } from 'react'
+import { SCENARIOS, SERVER_FACTS } from '../data/mcpScenarios'
+
+const MCP_URL = 'https://contract.sallim.app/mcp'
+const DOCS_URL = 'https://github.com/kwenhwang/contract-compass/blob/master/docs/MCP.md'
+
+function CopyEndpoint() {
+  const [done, setDone] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(MCP_URL)
+      setDone(true)
+      setTimeout(() => setDone(false), 1600)
+    } catch {
+      // 클립보드 권한이 없는 브라우저(구형 인앱 뷰)에서는 조용히 실패한다 —
+      // 주소는 옆에 그대로 보이므로 사용자가 직접 선택해 복사할 수 있다.
+    }
+  }
+  return (
+    <button className={`lp-copy${done ? ' done' : ''}`} onClick={copy} title="엔드포인트 복사">
+      {done ? '복사됨 ✓' : '복사'}
+    </button>
+  )
+}
+
+function ScenarioCard({ s }: { s: (typeof SCENARIOS)[number] }) {
+  return (
+    <article className="sc">
+      <div className="sc-head">
+        <span className="sc-n">{s.n}</span>
+        <span className="sc-axis">{s.axis}</span>
+      </div>
+      <div className="sc-body">
+        <div className="sc-ask">
+          <span className="who">사용자</span>
+          <p>{s.ask}</p>
+        </div>
+
+        <div className="sc-call">
+          <div className="sc-call-h">
+            <span className="tag">TOOL CALL</span>
+            <span>{s.tool}</span>
+          </div>
+          <pre>{s.args}</pre>
+        </div>
+
+        <div className="sc-out">
+          <div className="sc-out-label">서버 응답 (LLM 미사용 · 결정론)</div>
+          {s.facts.map((f) => (
+            <div className="sc-fact" key={f.k}>
+              <span className="fk">{f.k}</span>
+              <span className="fv">
+                {f.v}
+                {f.src && <span className="fsrc">{f.src}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <p className="sc-why">{s.why}</p>
+      </div>
+    </article>
+  )
+}
 
 export default function HomeDashboard({ onDecision, onGlossary }: {
   onDecision: () => void; onGlossary: () => void
@@ -13,108 +83,160 @@ export default function HomeDashboard({ onDecision, onGlossary }: {
     // 뒤 아래로 스크롤이 먹지 않는다(T-2026W33-178 실측). 뒤 위저드는 .home-open이 접는다.
     <div className="home-page">
       <div className="app">
-        {/* 상단바 */}
-        {/* 마스트헤드 = 앱 헤더와 같은 문법(감청 괘선 + 워드마크 + mono 부제).
-            v1의 그라데이션 아이콘 배지는 폐기했다(T-2026W33-179). */}
+        {/* 마스트헤드 = 앱 헤더와 같은 문법(감청 괘선 + 워드마크 + mono 부제, T-2026W33-179) */}
         <div className="topbar">
           <div className="tb-logo">
             <span className="tb-rule" aria-hidden="true" />
-            <span><span className="tt">계약나침반</span> <span className="ts">공공계약 방법 결정 도우미</span></span>
+            <span><span className="tt">계약나침반</span> <span className="ts">공공계약 법령 MCP 서버</span></span>
           </div>
         </div>
 
-        {/* 본문 */}
-        <div className="dash">
-          <div className="dash-hero">
-            <div>
-              <div className="greet"><b>계약나침반</b> — 공공계약 방법 결정 도우미</div>
-              <div className="subg">사업명·금액만 입력하면 법령 기준 계약방법을 결정론 룰엔진이 안내합니다.</div>
-            </div>
-          </div>
-
-          <div className="entry-cards">
-            {/* 계약방법 결정 위저드 */}
-            <div className="entry primary">
-              <span className="defbadge">시작하기</span>
-              <div className="ehead">
-                <span className="eico eico-dec">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M9 13l2 2 4-4" /></svg>
-                </span>
-                <div><h3>계약방법 결정</h3><div className="ewho">발주 전 · 계약 담당자</div></div>
-              </div>
-              <p>사업명·사업개요·추정가격 3가지만 입력하면 계약유형 분류부터 계약방법·제한경쟁·적용 법령까지 한 번에 추천합니다.</p>
-              <div className="emini">
-                <div className="mi"><span className="miv num">3초</span><span className="mik">입력→추천</span></div>
-                <div className="mi"><span className="miv num">룰엔진</span><span className="mik">결정론 근거</span></div>
-              </div>
-              <div className="ecta">
-                <button className="btn btn-primary" onClick={onDecision}>계약방법 결정 시작 →</button>
-              </div>
-            </div>
-
-            {/* 용어사전 */}
-            <div className="entry">
-              <div className="ehead">
-                <span className="eico" style={{ background: 'var(--violet-tint)', color: 'var(--violet-ink)' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-                </span>
-                <div><h3>계약 용어사전</h3><div className="ewho">추정가격·적격심사·중기간…</div></div>
-              </div>
-              <p>공공계약 실무 용어를 검색하고, 관련 용어로 이어서 학습할 수 있습니다. 위저드 화면의 용어에도 자동으로 풀이가 달립니다.</p>
-              <div className="ecta">
-                <button className="btn btn-ghost" onClick={onGlossary}>용어사전 열기 →</button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* MCP 안내 — AI 에이전트 사용자용 발견 경로 (2026-07-30) */}
-          <div className="entry" style={{ marginTop: 14 }}>
-            <div className="ehead">
-              <span className="eico" style={{ background: 'var(--violet-tint)', color: 'var(--violet-ink)' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M12 12v4M9 14h6" /></svg>
-              </span>
-              <div><h3>AI 에이전트용 MCP 서버</h3><div className="ewho">Claude · ChatGPT · Cursor 연결</div></div>
-            </div>
-            <p>
-              쓰시는 AI에 계약나침반을 연결하면 룰엔진 판정·법령 조문·적격심사 세부기준(별표)·
-              판례를 AI가 직접 조회해 답합니다. 서버는 LLM을 쓰지 않아 근거가 검증 가능합니다.
+        <div className="lp">
+          {/* ── 히어로 ── */}
+          <header className="lp-hero">
+            <span className="lp-kicker">MCP Server · 무LLM 결정론</span>
+            <h1 className="lp-h1">
+              쓰던 AI에 <em>공공계약 법령</em>을 붙입니다
+            </h1>
+            <p className="lp-lede">
+              계약나침반은 AI 에이전트용 <b>MCP 서버</b>입니다. Claude·ChatGPT·Cursor에 연결하면
+              AI가 계약방법 룰엔진 판정·법령 조문 원문·계약예규·적격심사 세부기준·판례를
+              <b> 직접 조회해</b> 답합니다. 서버는 어떤 도구에서도 LLM을 쓰지 않으므로,
+              답의 근거를 조문 번호까지 되짚을 수 있습니다.
             </p>
-            <p style={{ fontSize: 13 }}>
-              <code style={{ background: 'var(--bg-2, #f4f4f5)', padding: '2px 6px', borderRadius: 4 }}>
-                https://contract.sallim.app/mcp
+
+            <div className="lp-connect">
+              <div className="lp-connect-label">Streamable HTTP 엔드포인트</div>
+              <div className="lp-endpoint">
+                <code>{MCP_URL}</code>
+                <CopyEndpoint />
+              </div>
+              <code className="lp-connect-cmd">
+                claude mcp add --transport http contract-compass {MCP_URL}
               </code>
-              {' '}· 무료 50콜/일 ·{' '}
-              <a href="https://github.com/sallim-app/contract-compass/blob/master/docs/MCP.md" target="_blank" rel="noreferrer">도구 명세</a>
-              {' '}·{' '}
-              <a href="/mcp/pricing" target="_blank" rel="noreferrer">요금 안내</a>
-            </p>
-          </div>
-
-          {/* 가이드 페이지 링크 — 생성 페이지(/g/)로 가는 유일한 사내 진입 경로.
-              sitemap에만 있고 사이트 안에서 아무도 링크하지 않으면 고아 페이지가 되고,
-              크롤러도 사용자도 사실상 도달하지 못한다(2026-08-06 codex 지적). */}
-          <div className="entry" style={{ marginTop: 14 }}>
-            <div className="ehead">
-              <span className="eico" style={{ background: 'var(--violet-tint)', color: 'var(--violet-ink)' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
-              </span>
-              <div><h3>공공계약 가이드</h3><div className="ewho">금액구간별 계약방법 · 수의계약 사유 · 용어</div></div>
+              <p className="lp-connect-more">
+                무료 IP당 50콜/일 · 가입·키 발급 없이 바로 연결 ·{' '}
+                <a href={DOCS_URL} target="_blank" rel="noreferrer">도구 11종 명세</a>{' '}
+                ·{' '}
+                <a href="/mcp/pricing" target="_blank" rel="noreferrer">한도 상향</a>{' '}
+                ·{' '}
+                <a href="/mcp/health" target="_blank" rel="noreferrer">서버 상태</a>
+              </p>
             </div>
-            <p>
-              계약유형·기관유형·추정가격 구간별로 적용 가능한 계약방법과 근거 조문을 정리한
-              문서입니다. 판정값은 이 서비스와 같은 룰엔진에서 나옵니다.
-            </p>
-            <p style={{ fontSize: 13 }}>
-              <a href="/g/index.html">가이드 목차 열기 →</a>
-            </p>
-          </div>
 
-          <p style={{ marginTop: 18, fontSize: 12, color: 'var(--ink-3)' }}>
-            AI는 부정확할 수 있습니다. 중요한 결정 시 법령·실무 기준을 반드시 확인하세요.
-          </p>
+            <div className="lp-facts">
+              {SERVER_FACTS.map((f) => (
+                <div className="lp-fact" key={f.k}>
+                  <span className="fv">{f.v}</span>
+                  <span className="fk">{f.k}</span>
+                  <span className="fn">{f.note}</span>
+                </div>
+              ))}
+            </div>
+          </header>
+
+          {/* ── 사용예시 = 이 화면의 본론 ── */}
+          <section className="lp-sec">
+            <div className="lp-sec-h">
+              <h2>실제 사용예시</h2>
+              <span className="sub">
+                아래 도구 호출·응답은 2026-08-15 라이브 서버(v1.6.4)에서 실측한 것입니다 — 예시용으로 꾸민 대화가 아닙니다.
+              </span>
+            </div>
+            {SCENARIOS.map((s) => <ScenarioCard key={s.id} s={s} />)}
+          </section>
+
+          {/* ── 설계 원칙 ── */}
+          <section className="lp-sec">
+            <div className="lp-sec-h">
+              <h2>왜 이렇게 만들었나</h2>
+              <span className="sub">AI가 법령을 '기억'해서 답하는 것과 무엇이 다른가</span>
+            </div>
+            <div className="lp-tenets">
+              <div className="lp-tenet">
+                <h3>서버는 판단하지 않는다</h3>
+                <p>
+                  판정은 법령을 직접 인코딩한 룰엔진이, 검색은 임베딩+BM25가, 판례는 law.go.kr
+                  실시간 프록시가 한다. 같은 입력에는 언제나 같은 결과가 나오고, 답을 합성하는
+                  것은 당신이 쓰는 AI다.
+                </p>
+              </div>
+              <div className="lp-tenet">
+                <h3>잘랐으면 잘랐다고 쓴다</h3>
+                <p>
+                  후보를 상한으로 자르면 무엇이 잘렸는지(<code>omitted_candidates</code>),
+                  코퍼스 밖 법령이면 "없다"가 아니라 "우리가 못 본다"고 응답에 적는다.
+                  은폐된 폴백이 없어야 AI가 지어내지 않는다.
+                </p>
+              </div>
+              <div className="lp-tenet">
+                <h3>매일 회귀로 지킨다</h3>
+                <p>
+                  수리한 결함은 결정론 회귀 케이스로 박히고 매일 04:30 라이브에 대고 재확인된다.
+                  외부에서도 같은 하네스로 우리 판정을 되짚을 수 있다(저장소 공개).
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* ── 보조 데모 — 웹 위저드는 여기로 강등됐다(D-2026W33-23) ── */}
+          <section className="lp-sec">
+            <div className="lp-sec-h">
+              <h2>연결 없이 먼저 보고 싶다면</h2>
+              <span className="sub">같은 룰엔진을 웹에서 직접 두드려 보는 보조 데모</span>
+            </div>
+            <div className="lp-demo">
+              <button className="lp-demo-card" onClick={onDecision}>
+                <span className="dt">계약방법 결정 위저드</span>
+                <span className="dd">
+                  사업명·사업개요·추정가격을 넣으면 MCP의 <code>decide_contract_method</code>와
+                  같은 룰엔진이 계약방법 후보와 근거 조문을 보여줍니다.
+                </span>
+                <span className="dgo">데모 실행 →</span>
+              </button>
+              <button className="lp-demo-card" onClick={onGlossary}>
+                <span className="dt">계약 용어사전</span>
+                <span className="dd">
+                  추정가격·적격심사·중기간 등 실무 용어를 검색하고 관련 용어로 이어서 봅니다.
+                </span>
+                <span className="dgo">용어사전 열기 →</span>
+              </button>
+              {/* 생성 페이지(/g/)로 가는 유일한 사내 진입 경로 — sitemap에만 있고 사이트
+                  안에서 아무도 링크하지 않으면 고아 페이지가 된다(2026-08-06 codex 지적).
+                  backend/services/dist_status.py가 번들에 이 문자열이 있는지 감시한다. */}
+              <a className="lp-demo-card" href="/g/index.html">
+                <span className="dt">공공계약 가이드</span>
+                <span className="dd">
+                  계약유형·기관유형·추정가격 구간별 계약방법과 근거 조문을 정리한 문서.
+                  판정값은 이 서비스와 같은 룰엔진에서 나옵니다.
+                </span>
+                <span className="dgo">가이드 목차 →</span>
+              </a>
+            </div>
+          </section>
+
+          <footer className="lp-foot">
+            <p>
+              오류·개정 미반영을 발견하면 MCP <code>report_issue</code> 도구로 바로 제보할 수
+              있습니다 — 운영 검토 파이프라인에 직결됩니다.{' '}
+              <a href={DOCS_URL} target="_blank" rel="noreferrer">도구 명세</a>
+            </p>
+            <p>
+              ⚠️ 이 서비스는 정보 제공 목적이며 법적 자문·유권해석이 아닙니다. 적격심사 통과점수·
+              낙찰하한율·각종 한도는 발주기관 세부기준과 법령 개정에 따라 다를 수 있으므로,
+              실제 발주 전 소속 기관 계약 부서와 현행 법령을 확인하세요.
+            </p>
+            <p>
+              <a href="/legal/privacy">개인정보처리방침</a> ·{' '}
+              <a href="/legal/terms">이용약관</a> · 운영 살림(Sallim) ·{' '}
+              문의 sallimapp@gmail.com
+            </p>
+          </footer>
         </div>
       </div>
     </div>
   )
 }
+
+// 전환 계측: 홈→위저드 진입은 App.tsx가 track('wizard-start')로 잡는다(분모가 거기 있다).
+// 엔드포인트 복사는 세지 않는다 — 클립보드 권한 실패가 조용해서 분자가 왜곡된다.
