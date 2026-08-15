@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from backend.config import get_settings, BASE_DIR
 
 logger = logging.getLogger("contract-compass")
@@ -215,6 +215,79 @@ def resolve_dist_path(full_path: str, dist: Path = None):
     except OSError:
         return None
     return candidate if candidate == base or base in candidate.parents else None
+
+
+# ── 법적 고지 실물 페이지 (2026-08-16) ─────────────────────────────────────
+# Creem 심사 선행조건 — 종전엔 /legal/privacy·/legal/terms가 SPA 폴백으로 홈 200을
+# 돌려줘 "문서 없음"으로 판정됐다(사장님 Computer Use 실사, D-2026W33-21). 문서 정본은
+# realty-mcp server.py _LEGAL_HTML과 동일 내용(적용 범위가 살림 제품군 전체를 명시) —
+# 여기 사본을 두는 이유는 심사가 스토어 도메인(contract.sallim.app) 안의 URL을 요구해서다.
+# 내용 개정 시 두 곳을 함께 갱신할 것. SPA 캐치올보다 먼저 등록돼야 한다(등록 순서 승자).
+_LEGAL_HTML = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>개인정보처리방침 · 이용약관 — 살림(Sallim)</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.7;color:#1a202c}
+h1{font-size:1.4rem}h2{font-size:1.15rem;margin-top:2rem}h3{font-size:1rem;margin-top:1.4rem}
+small{color:#64748b}ul{padding-left:1.2em}</style></head><body>
+<h1>개인정보처리방침 · 이용약관</h1>
+<p><small>적용 범위: 살림(Sallim) 제품군 — sallim.app과 그 하위 도메인(realty.sallim.app,
+contract.sallim.app, eatlog.sallim.app) 및 데이터 블로그(realty.naru.build/blog).
+시행일 2026-08-15.</small></p>
+
+<h2 id="privacy">개인정보처리방침</h2>
+<h3>1. 수집하는 항목과 방법</h3>
+<ul>
+<li><b>주문·문의</b>: 이메일로 주문·문의하실 때 이메일 주소와 문의 내용을 받습니다.</li>
+<li><b>카드 결제</b>(contract.sallim.app): 결제는 결제대행사 Creem이 처리하며 카드번호 등
+결제수단 정보는 저희 서버에 저장되지 않습니다. 결제 완료 시 결제대행사로부터 이메일 주소와
+주문 식별자를 전달받아 이용권 발급·문의 대응에 사용합니다.</li>
+<li><b>API 키</b>: 발급된 키는 원문이 아닌 단방향 해시(sha256)로만 저장합니다.</li>
+<li><b>자동 수집</b>: 웹서버 접속 기록(IP 주소·접속 시각·요청 경로·브라우저 정보)과
+API 호출 기록(도구명·시각·키 식별자)을 보안, 오류 진단, 사용량 한도 관리 목적으로 남깁니다.</li>
+<li><b>방문 통계</b>: 자체 호스팅 분석 도구(umami)로 쿠키 없이 익명 통계만 수집하며,
+개인을 식별하지 않습니다.</li>
+</ul>
+<h3>2. 이용 목적</h3>
+<p>이용권 발급·유효기간 관리, 문의·환불 대응, 부정 사용 방지, 서비스 개선.</p>
+<h3>3. 보유·파기</h3>
+<p>주문·이용권 정보는 이용기간 종료 후 환불·분쟁 대응에 필요한 동안 보관하고, 목적이 다하면
+지체 없이 파기합니다. 접속 기록은 서버 운영 주기에 따라 순환 삭제됩니다.</p>
+<h3>4. 제3자 제공·처리 위탁</h3>
+<p>개인정보를 제3자에게 제공하지 않습니다. 서비스 운영을 위해 결제 처리(Creem)와 콘텐츠
+전송·보안(Cloudflare)을 위탁하며, 두 업체는 국외 사업자입니다.</p>
+<h3>5. 이용자 권리</h3>
+<p>본인 정보의 열람·정정·삭제를 아래 문의처로 요청하실 수 있으며 지체 없이 처리합니다.</p>
+<h3>6. 문의</h3>
+<p>sallimapp@gmail.com</p>
+
+<h2 id="terms">이용약관</h2>
+<h3>1. 서비스의 성격</h3>
+<p>공공데이터 기반 정보 제공 도구(웹·MCP API)입니다. <b>투자·법률 자문이 아니며</b>,
+정보의 정확성·완전성을 보장하지 않습니다. 이용 판단과 그 결과는 이용자 책임입니다.</p>
+<h3>2. 이용권</h3>
+<p>유료 이용권은 기간제(예: 7·30·90일)이며 <b>자동 갱신·자동 청구가 없습니다</b>.
+연장은 재구매로 합니다. 키의 공유·재판매는 금지합니다.</p>
+<h3>3. 환불</h3>
+<p>결제 오류·중복 결제는 전액 환불합니다. 서비스가 종료되는 경우 잔여 기간을 환불합니다.
+환불 문의는 이메일로 받습니다.</p>
+<h3>4. 금지 행위</h3>
+<p>서비스 안정성을 해치는 과도한 자동 호출, 원천 데이터의 이용조건을 위반하는 사용.</p>
+<h3>5. 책임 한계</h3>
+<p>무료 도구는 있는 그대로 제공됩니다. 유료 이용권 관련 책임은 결제 금액을 한도로 합니다.</p>
+<h3>6. 약관의 변경</h3>
+<p>변경 시 이 페이지에 게시합니다.</p>
+<p><small>운영자: 살림(Sallim) · 문의 sallimapp@gmail.com</small></p>
+</body></html>"""
+
+_LEGAL_HEADERS = {"cache-control": "public, max-age=3600"}
+
+
+@app.get("/legal/privacy", include_in_schema=False)
+@app.get("/legal/terms", include_in_schema=False)
+@app.get("/privacy", include_in_schema=False)
+@app.get("/terms", include_in_schema=False)
+async def serve_legal():
+    return HTMLResponse(_LEGAL_HTML, headers=_LEGAL_HEADERS)
 
 
 # React SPA 정적 서빙 (루트 경로 — API 라우터가 먼저 등록돼 /api/*는 영향 없음)
