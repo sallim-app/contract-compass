@@ -40,3 +40,4 @@ data/cohere_rerank_quota.json
 # 날짜 접미사 백업 (*.bak 패턴에 안 걸림)
 *.bak-*
 data/pending_keys.json
+data/chat_anon_quota.json

@@ -32,7 +32,19 @@ PATTERNS=(
   'B551'                # 기관코드
   'sk-[A-Za-z0-9_-]{20}'   # OpenAI 실키
   'AIzaSy[A-Za-z0-9_-]{10}' # Google 실키
+  # ── 우리 인프라 주소(2026-08-15 추가) ────────────────────────────────────
+  # 계기: 공개 저장소 HEAD의 mcp/auth.py에 오리진 공인 IP 2개가 그대로 있었는데 이 스캐너는
+  # 매 커밋 "매치 0건"으로 통과시켰다 — **탐지기는 도는데 대상이 빠져 거짓 안심을 팔던 자리**.
+  # Cloudflare 뒤 오리진 주소는 노출되면 CF 우회 경로를 알려주는 것이라 대외비와 같은 등급이다.
+  # 값을 여기 또 적지 않으려면 SCAN_EXTRA_PATTERNS(비추적 파일)로 주입할 수도 있다.
+  '\b168\.107\.47\.60\b'    # naru 오리진
+  '\b152\.69\.232\.84\b'    # quant 오리진
+  '\b10\.0\.1\.(14|163)\b'  # 사내 VCN 사설주소
 )
+# 비추적 파일에서 패턴을 더 읽는다(값을 저장소에 안 남기고 싶을 때). 없으면 그냥 넘어간다.
+[ -f "${SCAN_EXTRA_PATTERNS:-/data/secrets/scan-extra-patterns.txt}" ] && \
+  while IFS= read -r _p; do [ -n "$_p" ] && PATTERNS+=("$_p"); done \
+    < "${SCAN_EXTRA_PATTERNS:-/data/secrets/scan-extra-patterns.txt}"
 
 # 커밋되지 않는 로컬 데이터(.gitignore 대상)는 스캔 제외 — 공개 법령 XML은
 # 조문에 '한국수자원공사법' 등 공기업명이 정당하게 등장한다.
@@ -55,7 +67,14 @@ for pat in "${PATTERNS[@]}"; do
   # tests/qa_bank.json: leak 탐침 질문("한국수자원공사 내규…")이 의도적으로 포함된 테스트 데이터
   # /\.env(\.bak…)?: — .env 본체와 그 날짜접미사 백업(.gitignore:41 '*.bak-*')은 커밋되지
   # 않으므로 공개 표면이 아니다. .env.example(추적 대상)은 계속 스캔한다.
-  hits=$(grep -rInE "${EXCLUDES[@]}" -e "$pat" "$ROOT" 2>/dev/null | grep -v "$SELF" | grep -vE "/\.env(\.bak[^:]*)?:" | grep -v "/etl/data/" | grep -v "tests/qa_bank.json" || true)
+  # .gitignore 대상은 제외한다(2026-08-15): 이 스캐너의 목적은 **공개 표면** 점검인데
+  # 종전엔 작업트리를 통째로 훑어 커밋되지 않는 런타임 파일(쿼터 json 등)까지 잡아
+  # 거짓 FAIL로 커밋을 막았다. 제외 목록을 파일마다 손으로 늘리는 대신 git에게 묻는다.
+  hits=$(grep -rInE "${EXCLUDES[@]}" -e "$pat" "$ROOT" 2>/dev/null | grep -v "$SELF" | grep -vE "/\.env(\.bak[^:]*)?:" | grep -v "/etl/data/" | grep -v "tests/qa_bank.json" \
+    | while IFS= read -r _line; do
+        _f="${_line%%:*}"
+        git -C "$ROOT" check-ignore -q "$_f" 2>/dev/null || printf '%s\n' "$_line"
+      done || true)
   if [[ -n "$hits" ]]; then
     fail=1
     echo "=== 매치: /$pat/ ==="

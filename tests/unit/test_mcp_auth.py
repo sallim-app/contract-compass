@@ -126,7 +126,7 @@ def test_subject_is_hashed_and_stable(monkeypatch):
     # **실제 오리진 IP를 테스트에 쓰지 않는다**(2026-08-15): 공개 저장소라 테스트가 곧 노출이다.
     # 문서용 예약 대역(TEST-NET-3, RFC 5737)을 주입해 같은 경로를 검증한다.
     monkeypatch.setattr(auth, "OURS", {"203.0.113.10", "203.0.113.11"})
-    for ip in ("203.0.113.10", "203.0.113.11", "10.0.1.14"):
+    for ip in ("203.0.113.10", "203.0.113.11", "10.99.99.99"):
         assert auth.resolve_access(_req(headers={"x-real-ip": ip})).is_internal is True
 
 
