@@ -4,7 +4,7 @@
 > returns deterministic rulings and verifiable legal source text; reasoning and answer
 > composition belong to the client agent.
 
-- 원격(Streamable HTTP): `https://contract.sallim.app/mcp` (별칭 `contract.naru.build/mcp`) · 헬스: `/mcp/health`
+- 원격(Streamable HTTP): `https://contract.sallim.app/mcp` · 헬스: `/mcp/health`
 - 로컬(stdio): `python3 mcp/server.py`
 - 무료: IP당 50콜/일(전 도구) · 유료 키(`cc_live_*`): 한도 상향 — [요금](https://contract.sallim.app/mcp/pricing)
 - 인증: `Authorization: Bearer cc_live_...` 헤더 또는 `?key=` 쿼리(ChatGPT 커넥터용)
@@ -21,7 +21,7 @@
 ## 도구 명세 (11종)
 
 ### decide_contract_method — 계약방법 결정론 판정
-룰엔진(94룰, 국가/지방/공기업 3프로파일)이 적용 가능한 계약방법 후보를 법령 근거와 반환.
+룰엔진(114룰, 국가/지방/공기업 3프로파일)이 적용 가능한 계약방법 후보를 법령 근거와 반환.
 - 입력: `contract_type`("construction"|"service"|"product"), `estimated_price`(원),
   `org_type`("national"|"local"|"public_corp"), 선택: `service_type`,
   `construction_specialty`, `is_sme_competition_product`, `negotiation_reason`
@@ -155,7 +155,7 @@ AI 클라이언트 (Claude/ChatGPT/Cursor/Codex — 합성·판단 담당)
     → naru nginx (/lawproxy → law.go.kr 직결 | /mcp → :8403 | 그 외 → :8402)
       → MCP 서버(:8403) → 백엔드(:8402): 룰엔진 · ChromaDB 코퍼스(법령 5,820조문 +
         예규·별표 1,100+청크 + 실무가이드) · BM25 하이브리드
-  [naru 장애] → 엣지 폴백 안내 → quant 콜드 스탠바이 수동 전환(docs/RUNBOOK-failover.md)
+  [오리진 장애] → 엣지 폴백 안내 → 콜드 스탠바이 수동 전환(비공개 운영 문서)
 ```
 
 ## 한도·요금

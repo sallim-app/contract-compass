@@ -483,14 +483,23 @@ export default function Step3Page() {
           <p className="op-card-title" style={{ color: 'var(--med-ink)' }}>
             <Icon name="clipboard-check" size={14} style={{ color: 'var(--med-ink)' }} /> 공공구매 의무 확인
           </p>
+          {/* 종전 slice(0,4)가 해당 의무 6건 중 2건(장애인기업·소상공인)을 **말없이 잘랐다**.
+              담당자가 이 화면으로 의무구매 비율을 산정하면 누락 책임이 담당자에게 간다.
+              우리가 파는 원칙("잘랐으면 잘랐다고 쓴다")을 자기 화면이 어긴 자리라 전량 표시로
+              바꾼다(2026-08-15 UX 리뷰, 규칙 파일 실측 6건). */}
           <ul className="op-legal">
-            {public_procurement_obligations.slice(0, 4).map((ob: any, i) => (
+            {public_procurement_obligations.map((ob: any, i) => (
               <li key={i} className="op-legal-item">
                 <span style={{ color: 'var(--med-ink)', fontWeight: 700 }}>•</span>
                 {ob.category}: {ob.mandatory_ratio ? `${(ob.mandatory_ratio * 100).toFixed(0)}% 이상` : '-'} 의무구매
+                {ob.legal_basis ? <span style={{ color: 'var(--med-ink)', opacity: 0.75 }}> ({ob.legal_basis})</span> : null}
               </li>
             ))}
           </ul>
+          <p className="op-card-note" style={{ color: 'var(--med-ink)', fontSize: '0.82rem', marginTop: 6 }}>
+            해당 의무 {public_procurement_obligations.length}건 전부입니다 — 비율은 기관 전체
+            구매액 기준이며 개별 계약 건마다 적용되는 값이 아닙니다.
+          </p>
         </div>
       )}
 

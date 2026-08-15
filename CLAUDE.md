@@ -9,12 +9,12 @@
 - **서비스 2개**: `contract-compass.service`(:8402 — FastAPI 백엔드 + 프런트 dist 서빙) ·
   `contract-mcp.service`(:8403 — MCP Streamable HTTP). 배포 = `sudo systemctl restart contract-compass|contract-mcp`
 - **공개 주소**: `https://contract.sallim.app` · MCP `…/mcp` · 헬스 `…/mcp/health` · 가격 `…/mcp/pricing`
-  (별칭 `contract.naru.build` 유지). 원격 git = `github.com/kwenhwang/contract-compass`(공개)
+  (구주소 별칭은 비공개 운영 문서 참조). 원격 git = `github.com/sallim-app/contract-compass`(공개)
 - **프런트는 커밋만으로 안 바뀐다** — `frontend/dist/`가 .gitignore인데 백엔드가 그걸 서빙한다.
   배포는 반드시 `scripts/deploy.sh`(생성→빌드→교체→판정). 백엔드 재시작 불필요
 - **티어 게이트**: 무료 IP당 50콜/일, 유료 키 `cc_live_*`. 루프백·stdio는 무제한(야간 QA·
   회귀 하네스가 자기 쿼터에 막히는 사고 방지). 구현 = `mcp/auth.py`·`keystore.py` + `QuotaGate` 미들웨어
-- **판정의 진실원은 `rules/contract_rules.json`(94룰)** — 코드에 금액·수치를 박지 마라.
+- **판정의 진실원은 `rules/contract_rules.json`(114룰)** — 코드에 금액·수치를 박지 마라.
   법령 원문 코퍼스는 chroma_db(법령 38건 + 예규·별표·실무가이드), 판례는 law.go.kr 실시간 프록시
 
 ## 이 저장소의 중심 규칙
@@ -47,8 +47,13 @@
   여기에 질문 추가 → 수리 → `R*` 회귀 순서로 고정한다.
 - **`docs/DELAY-PENALTY-AXIS.md`** — 이행단계 축(지체상금·지연배상금) 설계. 국가/지방 요율이
   다르다는 실측표와 인식 경계 계약(지체일수는 우리가 확정하지 않는다)이 여기 있다.
-- **`docs/RUNBOOK-failover.md`**(장애 이관) · **`docs/POSITIONING.md`**(제품 위치) ·
-  **`docs/PROGRAMMATIC_SEO.md`**(생성 페이지) · **`README.md`**(사용자용 도구 표).
+- **`frontend/src/data/mcpScenarios.ts`** — 랜딩 첫 화면이 대외로 주장하는 도구 출력(전부
+  실측). 랜딩 표면의 목적은 웹앱 전시가 아니라 **MCP를 사용예시로 알리는 획득**이다
+  (D-2026W33-23) — 카드 나열형 대시보드로 되돌리지 마라. 전시값·og 카드
+  (`tools/build_og_image.py`)·회귀 `R63~R66`은 한 몸이니 같은 턴에 고쳐라.
+- **`docs/failover.md`**(장애 전환 — 세부는 비공개 운영 문서) · **`docs/POSITIONING.md`**(제품 위치) ·
+  **`docs/PROGRAMMATIC_SEO.md`**(생성 페이지) · **`docs/THREAD-2-DRAFT.md`**(미발행 스레드
+  초안) · **`README.md`**(사용자용 도구 표).
 
 ## 품질 루프 — 결함은 이 2개 경로로만 들어온다
 

@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { SCENARIOS, SERVER_FACTS } from '../data/mcpScenarios'
 
 const MCP_URL = 'https://contract.sallim.app/mcp'
-const DOCS_URL = 'https://github.com/kwenhwang/contract-compass/blob/master/docs/MCP.md'
+const DOCS_URL = 'https://github.com/sallim-app/contract-compass/blob/master/docs/MCP.md'
 
 function CopyEndpoint() {
   const [done, setDone] = useState(false)
