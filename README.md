@@ -1,5 +1,7 @@
 # 계약나침반 🧭 (Contract Compass)
 
+[![Glama MCP server](https://glama.ai/mcp/servers/pg836bshvk/badge)](https://glama.ai/mcp/servers/sallim-app/contract-compass)
+
 > **Korean public procurement law MCP server & web service** — a deterministic rule
 > engine for contract-method decisions (94 rules encoded directly from statutes), a
 > searchable corpus of Korean procurement statutes/regulations/adjudication tables,
@@ -29,6 +31,22 @@
 
 원격 엔드포인트(Streamable HTTP): **`https://contract.sallim.app/mcp`**
 무료: IP당 50콜/일 (전 도구) · 유료 키: 한도 상향 — [요금 안내](https://contract.sallim.app/mcp/pricing)
+
+### 도구 목록 (11종) — Tools / ツール
+
+아래 표는 **라이브 서버의 `tools/list` 응답에서 그대로 뽑은 것**입니다(실측 2026-08-18, 11종 전수).
+MCP 디렉토리·크롤러가 이 저장소를 정적으로 읽을 때 도구 이름을 찾는 자리이므로, 서버의 실제
+도구 목록과 1:1로 유지합니다(불일치는 회귀로 취급). 누구나 직접 재현할 수 있습니다:
+
+```bash
+curl -s -X POST https://contract.sallim.app/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+# → decide_contract_method, search_law, search_references, search_cases, get_case,
+#   get_law_article, get_law_article_asof, estimate_delay_penalty,
+#   delay_exemption_guide, check_price_adjustment, report_issue  (11 tools)
+```
 
 | 도구 | 설명 | LLM |
 |---|---|---|
